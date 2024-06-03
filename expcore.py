@@ -41,7 +41,7 @@ class InputGraph:
 
 
 class FileInputGraph(InputGraph):
-    def __init__(self, name, path, format='metis'):
+    def __init__(self, name, path, format="metis"):
         self._name = slugify.slugify(name)
         self.path = path
         self.format = format
@@ -49,12 +49,14 @@ class FileInputGraph(InputGraph):
         self.partitioned = False
 
     def args(self, mpi_ranks, threads_per_rank, escape):
-        #file_args = [str(self.path), "--input-format", self.format]
+        # file_args = [str(self.path), "--input-format", self.format]
         file_args = ["--graphtype", "BRAIN", "--infile_dir", str(self.path)]
         if self.partitioned and mpi_ranks > 1:
             partition_file = self.partitions.get(mpi_ranks, None)
             if not partition_file:
-                logging.error(f"Could not load partitioning for p={mpi_ranks} for input {self.name}")
+                logging.error(
+                    f"Could not load partitioning for p={mpi_ranks} for input {self.name}"
+                )
                 sys.exit(1)
             file_args += ["--partitioning", partition_file]
         return file_args
@@ -68,6 +70,7 @@ class FileInputGraph(InputGraph):
             return self._name + "_partitioned"
         else:
             return self._name
+
     @name.setter
     def name(self, value):
         self._name = value
@@ -87,135 +90,6 @@ class FileInputGraph(InputGraph):
         return f"FileInputGraph({self.name, self.path, self.format, self.partitioned, self.partitions})"
 
 
-class GenInputGraph(InputGraph):
-
-    parameter_list = {
-        "rhg": ["m", "gamma"],
-        "gnm": ["m"],
-        "rgg2d": ["m"],
-        "rgg3d": ["m"],
-        "rmat": ["m"],
-        "rdg2d": [],
-        "rdg3d": [],
-    }
-
-    def __init__(self, generator, **kwargs):
-        if generator not in GenInputGraph.parameter_list.keys():
-            raise ValueError(f"Generator {generator} is not supported.")
-        self.generator = generator
-        self.params = kwargs
-        self.scale_weak = self.params.get("scale_weak", False);
-        required_parameters = set(
-            GenInputGraph.parameter_list[self.generator] + ['n'])
-        if not required_parameters.issubset(self.params.keys()):
-            raise ValueError(
-                f"Generator {self.generator} requires the following parameters: {required_parameters}"
-            )
-
-    def args(self, mpi_ranks, threads_per_rank, escape):
-        p = mpi_ranks * threads_per_rank
-        arg_list = ["--graphtype"]
-        arg_list.append(self.generator);
-        arg_list.append("--log_num_vertices")
-        if self.scale_weak:
-            if not math.log2(p).is_integer():
-                sys.exit("Number of PEs must be a power of two")
-            scaled_n = self.n(p)
-            if "m" in self.params:
-                scaled_m = self.m(p)
-            else:
-                scaled_m = None
-            arg_list.append(str(scaled_n))
-        else:
-            arg_list.append(str(self.params["n"]))
-        if self.generator == 'rgg2d':
-            arg_list.append("--log_num_edges")
-            arg_list.append(str(scaled_m))
-        if self.generator == 'rgg3d':
-            arg_list.append("--log_num_edges")
-            arg_list.append(str(scaled_m))
-        elif self.generator == 'rhg':
-            arg_list.append("--gamma")
-            arg_list.append(str(self.params["gamma"]))
-            arg_list.append("--log_num_edges")
-            arg_list.append(str(scaled_m))
-        elif self.generator == 'gnm':
-            arg_list.append("--log_num_edges")
-            arg_list.append(str(scaled_m))
-        elif self.generator == 'rmat':
-            arg_list.append("--log_num_edges")
-            arg_list.append(str(scaled_m))
-            if 'a' in self.params:
-                arg_list.append("--gen_a")
-                arg_list.append(str(a))
-            if 'b' in self.params:
-                arg_list.append("--gen_b")
-                arg_list.append(str(b))
-            if 'c' in self.params:
-                arg_list.append("--gen_c")
-                arg_list.append(str(c))
-        #arg_list.append("--gen_statistics")
-        return arg_list
-
-    def n(self, p):
-        if self.scale_weak:
-            return self.params["n"] + int(math.log2(p))
-        else:
-            return self.params["n"]
-
-    def m(self, p):
-        if self.scale_weak:
-            return self.params["m"] + int(math.log2(p))
-        else:
-            return self.params["m"]
-
-    @property
-    def name(self):
-        n = self.params["n"]
-        name = f"{self.generator.upper()}({n}"
-        for key in GenInputGraph.parameter_list[self.generator]:
-            val = self.params[key]
-            name += f"-{key}={val}"
-        name += ")"
-        if self.scale_weak:
-            name += "_weak"
-        return slugify.slugify(name)
-
-
-def load_inputs_from_yaml(yaml_path):
-    with open(yaml_path, "r") as file:
-        data = yaml.safe_load(file)
-    inputs = {}
-    for rec in data["graphs"]:
-        name = rec['name']
-        path = Path(yaml_path).parent / rec['path']
-        format = rec['format']
-        graph = FileInputGraph(name, path, format)
-        if not graph.exists():
-            logging.warn(f"Could not load graph {graph.name}")
-        else:
-            inputs[graph.name] = graph
-    partitions = {}
-    if "includes" in data:
-        for rec in data["includes"]:
-            sub_inputs, sub_partitions = load_inputs_from_yaml(Path(yaml_path).parent / rec)
-            inputs.update(sub_inputs)
-            partitions.update(sub_partitions)
-    if "partitions" in data:
-        root = Path(yaml_path).parent / data["partitions"]
-        for file in os.listdir(root):
-            if os.path.isfile(os.path.join(root, file)):
-                m = re.match(r"(.*)_k([0-9]+)", file)
-                if not m:
-                    logging.warn(f"Invalid partition name {file}")
-                key = (m.group(1), int(m.group(2)))
-                if not key[0] in partitions:
-                    partitions[key[0]] = {}
-                partitions[key[0]][key[1]] = os.path.join(root, file)
-    #print(partitions)
-    return (inputs, partitions)
-
-
 class KaGenGraph(InputGraph):
 
     def __init__(self, **kwargs):
@@ -230,24 +104,23 @@ class KaGenGraph(InputGraph):
             self.m = kwargs.get("m", 1 << int(kwargs["M"]))
         except TypeError:
             self.m = None
-        kwargs.pop("n", None);
-        kwargs.pop("N", None);
-        kwargs.pop("m", None);
-        kwargs.pop("M", None);
-        self.scale_weak = kwargs.get("scale_weak", False);
+        kwargs.pop("n", None)
+        kwargs.pop("N", None)
+        kwargs.pop("m", None)
+        kwargs.pop("M", None)
+        self.scale_weak = kwargs.get("scale_weak", False)
         kwargs.pop("scale_weak", False)
         self.params = kwargs
 
-
     def get_n(self, p):
         if self.scale_weak:
-            return self.n * p;
+            return self.n * p
         else:
             return self.n
 
     def get_m(self, p):
         if self.scale_weak:
-            return self.m * p;
+            return self.m * p
         else:
             return self.m
 
@@ -265,7 +138,7 @@ class KaGenGraph(InputGraph):
 
     def stringify_params(self):
         param_strings = []
-        for (key, value) in  self.params.items():
+        for key, value in self.params.items():
             if isinstance(value, bool):
                 param_strings.append(key)
             else:
@@ -285,6 +158,7 @@ class KaGenGraph(InputGraph):
         name = f"KaGen_{'_'.join(params)}"
         return slugify.slugify(name)
 
+
 class DummyInstance(InputGraph):
     def __init__(self, **kwargs):
         self.name_ = kwargs["name"]
@@ -293,8 +167,8 @@ class DummyInstance(InputGraph):
 
     def args(self, mpi_rank, treeads_per_rank, escape):
         params = []
-        for (key, value) in self.params.items():
-            params.append(f"--{key}");
+        for key, value in self.params.items():
+            params.append(f"--{key}")
             if not isinstance(value, bool):
                 params.append(f"{value}")
         return params
@@ -302,7 +176,7 @@ class DummyInstance(InputGraph):
     @property
     def name(self):
         param_strings = []
-        for (key, value) in  self.params.items():
+        for key, value in self.params.items():
             if isinstance(value, bool):
                 param_strings.append(key)
             else:
@@ -310,20 +184,21 @@ class DummyInstance(InputGraph):
         name = self.name_ + "_" + "_".join(param_strings)
         return slugify.slugify(name)
 
+
 class ExperimentSuite:
-    def __init__(self,
-                 name: str,
-                 suite_type: str,
-                 executable: None,
-                 cores=[],
-                 threads_per_rank=[1],
-                 inputs=[],
-                 configs=[],
-                 tasks_per_node=None,
-                 time_limit=None,
-                 input_time_limit={}):
+    def __init__(
+        self,
+        name: str,
+        executable: None,
+        cores=[],
+        threads_per_rank=[1],
+        inputs=[],
+        configs=[],
+        tasks_per_node=None,
+        time_limit=None,
+        input_time_limit={},
+    ):
         self.name = name
-        self.suite_type = suite_type
         self.executable = executable
         self.cores = cores
         self.threads_per_rank = threads_per_rank
@@ -386,39 +261,34 @@ def load_suite_from_yaml(path):
         else:
             if "generator" in graph:
                 generator = graph.pop("generator")
-                if (generator == "kagen"):
+                if generator == "kagen":
                     inputs.append(KaGenGraph(**graph))
-                elif (generator == "dummy"):
+                elif generator == "dummy":
                     inputs.append(DummyInstance(**graph))
                 else:
-                    inputs.append(GenInputGraph(generator, **graph))
-            elif "name" in graph:
-                partitioned = graph.get("partitioned", False)
-                inputs.append((graph["name"], partitioned))
+                    raise ValueError(
+                        f"'{generator}' is an unsupported argument for a graph generator. Use ['kagen', 'dummy'] instead."
+                    )
+            else:
+                raise ValueError(f"No generator defined for graph: {graph}.")
             time_limit = graph.get("time_limit")
             if time_limit:
                 time_limits[graph["name"]] = time_limit
-    if "type" in data:
-        suite_type = data["type"]
-    else:
-        suite_type = "BFS"
     if "executable" in data:
-        #if Path(path).is_absolute():
-        #    executable = data["executable"]
-        #else:
         executable = data["executable"]
     else:
         executable = None
-    return ExperimentSuite(data["name"],
-                           suite_type,
-                           executable,
-                           data["ncores"],
-                           data.get("threads_per_rank", [1]),
-                           inputs,
-                           configs,
-                           tasks_per_node=data.get("tasks_per_node"),
-                           time_limit=data.get("time_limit"),
-                           input_time_limit=time_limits)
+    return ExperimentSuite(
+        data["name"],
+        executable,
+        data["ncores"],
+        data.get("threads_per_rank", [1]),
+        inputs,
+        configs,
+        tasks_per_node=data.get("tasks_per_node"),
+        time_limit=data.get("time_limit"),
+        input_time_limit=time_limits,
+    )
 
 
 def explode(config):
@@ -435,11 +305,12 @@ def explode(config):
         return [config]
     return configs
 
+
 def params_to_flags(params):
     flags = []
     for flag, value in params.items():
         dash = "-"
-        if (len(flag) > 1):
+        if len(flag) > 1:
             dash += "-"
         if isinstance(value, bool):
             if value:
@@ -450,12 +321,14 @@ def params_to_flags(params):
     return flags
 
 
-def command(binary_name, binary_path, input, mpi_ranks, threads_per_rank, escape, **kwargs):
+def command(
+    binary_name, binary_path, input, mpi_ranks, threads_per_rank, escape, **kwargs
+):
     script_path = os.path.dirname(__file__)
     build_dir = Path(
-        os.environ.get("BUILD_DIR", os.path.join(script_path, "../build/")))
+        os.environ.get("BUILD_DIR", os.path.join(script_path, "../build/"))
+    )
     app = build_dir / binary_path / binary_name
-    # print(build_dir, binary_path, binary_name)
     command = [str(app)]
     if input:
         if isinstance(input, InputGraph):
@@ -463,7 +336,6 @@ def command(binary_name, binary_path, input, mpi_ranks, threads_per_rank, escape
         else:
             command.append(str(input))
     flags = []
-    #flags = ["--num-threads", str(threads_per_rank)]
     flags = flags + params_to_flags(kwargs)
     command = command + flags
     return command
