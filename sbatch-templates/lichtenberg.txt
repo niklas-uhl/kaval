@@ -1,0 +1,13 @@
+#!/bin/bash
+#SBATCH --nodes=${nodes}
+#SBATCH --ntasks=${ntasks}
+#SBATCH -o ${output_log}
+#SBATCH -e ${error_output_log}
+#SBATCH -J ${job_name}
+#SBATCH --time=${time_string}
+#SBATCH --get-user-env
+#SBATCH --mem-per-cpu=1500
+
+${module_setup}
+
+${commands}

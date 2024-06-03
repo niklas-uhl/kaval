@@ -1,0 +1,17 @@
+#!/bin/bash
+#SBATCH --nodes=${nodes}
+#SBATCH -o ${output_log}
+#SBATCH -e ${error_output_log}
+#SBATCH -J ${job_name}
+#SBATCH --partition=${job_queue}
+#SBATCH --time=${time_string}
+#SBATCH --get-user-env
+#SBATCH --account=${account}
+#SBATCH --switches=${islands}
+#SBATCH --constraint='work'
+#SBATCH --ear=off
+
+${module_setup}
+module load slurm_setup
+
+${commands}
