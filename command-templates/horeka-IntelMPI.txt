@@ -1,0 +1,7 @@
+echo "[LOG] Starting ${jobname}"
+start=$$(date +%s.%N)
+mpiexec.hydra -bootstrap slurm ${cmd}
+end=$$(date +%s.%N)
+diff=$$(echo "$$end - $$start" | bc)
+echo "[LOG] Finished ${jobname} in $${diff} seconds"
+sleep 10
