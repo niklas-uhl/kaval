@@ -100,6 +100,12 @@ def main():
 
     parser.add_argument("--test", action="store_true")
 
+    parser.add_argument(
+        "--omit-json-output-path",
+        action="store_true",
+        help="Do not pass specific json output path parameter to the executable",
+    )
+
     args = parser.parse_args()
     suites = load_suites(args.suite_files, args.search_dirs)
 

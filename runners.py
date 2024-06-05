@@ -133,6 +133,7 @@ class SBatchRunner:
         module_config,
         time_limit,
         use_test_partition=False,
+        omit_json_output_path=False,
     ):
         # append experiment_data_dir with current date
         data_suffix = date.today().strftime("%y_%m_%d")
@@ -157,39 +158,10 @@ class SBatchRunner:
         self.module_config = module_config
         self.time_limit = time_limit
         self.use_test_partition = use_test_partition
+        self.omit_json_output_path = omit_json_output_path
         self.command_template = None
         self.sbatch_template = None
         self.tasks_per_node = None
-
-    def required_nodes(self, cores, tasks_per_node):
-        return int(max(int(m.ceil(float(cores) / tasks_per_node)), 1))
-
-    def get_queue(self, cores, tasks_per_node):
-        nodes = self.required_nodes(cores, tasks_per_node)
-        if nodes <= 16:
-            return "micro"
-        elif nodes <= 768:
-            return "general"
-        else:
-            return "large"
-
-    def required_islands(self, nodes):
-        if nodes > 768:
-            return 2
-        else:
-            return 1
-
-    # def make_cmd_for_config(
-    #    self,
-    #    suite: ExperimentSuite,
-    #    input,
-    #    config_job_name,
-    #    config_index,
-    #    mpi_ranks,
-    #    threads_per_rank,
-    #    config,
-    # ):
-    #    raise NotImplementedError("Please implement this method.")
 
     def make_cmd_for_config(
         self,
@@ -205,7 +177,8 @@ class SBatchRunner:
             self.output_directory / f"{config_job_name}_timer.json"
         )
         config = config.copy()
-        config["json_output_path"] = str(json_output_prefix_path)
+        if not self.omit_json_output_path:
+            config["json_output_path"] = str(json_output_prefix_path)
         cmd = expcore.command(
             suite.executable,
             ".",
@@ -333,6 +306,7 @@ class SuperMUCRunner(SBatchRunner):
         tasks_per_node,
         time_limit,
         use_test_partition=False,
+        omit_json_output_path=False,
     ):
         SBatchRunner.__init__(
             self,
@@ -346,6 +320,7 @@ class SuperMUCRunner(SBatchRunner):
             module_config,
             time_limit,
             use_test_partition,
+            omit_json_output_path,
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 64
         script_path = Path(os.path.dirname(__file__))
@@ -386,6 +361,7 @@ class HorekaRunner(SBatchRunner):
         tasks_per_node,
         time_limit,
         use_test_partition=False,
+        omit_json_output_path=False,
     ):
         SBatchRunner.__init__(
             self,
@@ -399,6 +375,7 @@ class HorekaRunner(SBatchRunner):
             module_config,
             time_limit,
             use_test_partition,
+            omit_json_output_path,
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 76
         script_path = Path(os.path.dirname(__file__))
@@ -440,6 +417,7 @@ class GenericDistributedMemoryRunner(SBatchRunner):
         tasks_per_node,
         time_limit,
         use_test_partition=False,
+        omit_json_output_path=False,
     ):
         SBatchRunner.__init__(
             self,
@@ -453,6 +431,7 @@ class GenericDistributedMemoryRunner(SBatchRunner):
             module_config,
             time_limit,
             use_test_partition,
+            omit_json_output_path,
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 1
         script_path = Path(os.path.dirname(__file__))
@@ -493,6 +472,7 @@ def get_runner(args, suite):
             args.tasks_per_node,
             args.time_limit,
             args.test,
+            args.omit_json_output_path,
         )
     elif args.machine in "horeka":
         return HorekaRunner(
@@ -507,6 +487,7 @@ def get_runner(args, suite):
             args.tasks_per_node,
             args.time_limit,
             args.test,
+            args.omit_json_output_path,
         )
     elif args.machine == "generic-job-file":
         return GenericDistributedMemoryRunner(
@@ -521,6 +502,7 @@ def get_runner(args, suite):
             args.tasks_per_node,
             args.time_limit,
             args.test,
+            args.omit_json_output_path,
         )
     else:
         exit("Unknown machine type: " + args.machine)
