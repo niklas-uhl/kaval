@@ -329,6 +329,11 @@ class SuperMUCRunner(SBatchRunner):
             if sbatch_template is not None
             else script_path / "sbatch-templates/supermuc.txt"
         )
+        self.command_template = (
+            command_template
+            if command_template is not None
+            else script_path / "command-templates/supermuc-OpenMPI.txt"
+        )
 
     def get_queue(self, cores, tasks_per_node, use_test_partition):
         nodes = self.required_nodes(cores, tasks_per_node)
