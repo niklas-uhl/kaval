@@ -322,7 +322,7 @@ class SuperMUCRunner(SBatchRunner):
             use_test_partition,
             omit_json_output_path,
         )
-        self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 64
+        self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 48
         script_path = Path(os.path.dirname(__file__))
         self.sbatch_template = (
             sbatch_template
