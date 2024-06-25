@@ -1,0 +1,1 @@
+mpiexec --oversubscribe -n ${mpi_ranks} ${cmd}
