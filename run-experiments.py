@@ -68,16 +68,12 @@ def main():
         default=default_experiment_data_dir,
         help="Directory in which all relevant generated data (jobfiles and outputs) are stored.",
     )
-    sbatch_template_dir = Path(__file__).parent / "sbatch-templates"
     parser.add_argument(
         "--sbatch-template",
-        # default=sbatch_template_dir / "generic_job_files.txt",
         help="The path to the sbatch template to be used. The template likely needs to be adapted for each execution platform.",
     )
-    command_template_dir = Path(__file__).parent / "command-templates"
     parser.add_argument(
         "--command-template",
-        # default=command_template_dir / "command_template_generic.txt",
         help="The path to the command template to be used. The template likely needs to be adapted for each mpi implementation/single-threaded vs. multithreaded execution.",
     )
     parser.add_argument(
@@ -97,6 +93,9 @@ def main():
     )
     parser.add_argument(
         "--tasks-per-node", default=os.environ.get("TASKS_PER_NODE", None), type=int
+    )
+    parser.add_argument(
+        "--max-cores", default=sys.maxsize, type=int
     )
     parser.add_argument(
         "-t", "--time-limit", default=os.environ.get("TIME_LIMIT", 20), type=int

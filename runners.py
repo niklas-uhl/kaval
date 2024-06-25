@@ -103,12 +103,14 @@ class SharedMemoryRunner(BaseRunner):
     def __init__(
         self,
         suite_name,
+        max_cores: int,
         experiment_data_directory,
         output_directory,
         command_template,
         omit_json_output_path
     ):
         BaseRunner.__init__(self, suite_name, experiment_data_directory, "shared", output_directory, command_template, omit_json_output_path)
+        self.max_cores = max_cores
         self.failed = 0
         self.total_jobs = 0
 
@@ -122,6 +124,8 @@ class SharedMemoryRunner(BaseRunner):
         for input in experiment_suite.inputs:
             for i, config in enumerate(experiment_suite.configs):
                 for ncores in experiment_suite.cores:
+                    if ncores > self.max_cores:
+                        continue
                     for threads in experiment_suite.threads_per_rank:
                         local_config = config.copy()
                         mpi_ranks = ncores // threads
@@ -465,6 +469,7 @@ def get_runner(args, suite):
     if args.machine == "shared":
         runner = SharedMemoryRunner(
             suite.name,
+            args.max_cores,
             args.experiment_data_dir,
             args.output_dir,
             args.command_template,
