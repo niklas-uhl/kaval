@@ -39,6 +39,10 @@ class InputGraph:
     def args(self, mpi_rank, threads_per_rank, escape):
         raise NotImplementedError()
 
+    @property
+    def name(self):
+        return self._name
+
 
 class FileInputGraph(InputGraph):
     def __init__(self, name, path, format="metis"):

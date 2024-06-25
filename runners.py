@@ -30,109 +30,14 @@ import time
 from datetime import date
 
 
-class SharedMemoryRunner:
-
-    def __init__(
-        self,
-        suite_name,
-        experiment_data_directory,
-        output_directory,
-        verify_results=False,
-    ):
-        data_suffix = date.today().strftime("%y_%m_%d")
-        self.experiment_data_directory = Path(experiment_data_directory) / (
-            suite_name + "_" + data_suffix
-        )
-        self.experiment_data_directory.mkdir(exist_ok=True, parents=True)
-        self.output_directory = (
-            Path(output_directory)
-            if output_directory
-            else (self.experiment_data_directory / "output")
-        )
-        self.output_directory.mkdir(exist_ok=True, parents=True)
-        self.verify_results = verify_results
-        self.failed = 0
-        self.incorrect = 0
-
-    def execute(self, experiment_suite: ExperimentSuite):
-        print(f"Running suite {experiment_suite.name} ...")
-        with open(self.output_directory / "config.json", "w") as file:
-            json.dump(experiment_suite.configs, file, indent=4)
-        for i, config in enumerate(experiment_suite.configs):
-            for input in experiment_suite.inputs:
-                for ncores in experiment_suite.cores:
-                    for threads in experiment_suite.threads_per_rank:
-                        local_config = config.copy()
-                        mpi_ranks = ncores // threads
-                        if isinstance(input, expcore.InputGraph):
-                            input_name = input.name
-                        else:
-                            input_name = str(input)
-                        jobname = f"{input_name}-np{mpi_ranks}-t{threads}"
-                        config_job_name = jobname + "-c" + str(i)
-                        json_output_prefix_path = (
-                            self.output_directory / f"{config_job_name}_timer.json"
-                        )
-                        local_config["json_output_path"] = str(json_output_prefix_path)
-                        log_path = self.output_directory / f"{config_job_name}-log.txt"
-                        err_path = self.output_directory / f"{config_job_name}-err.txt"
-                        mpiexec = os.environ.get("MPI_EXEC", "mpiexec")
-                        cmd = mpiexec.split(" ")
-                        cmd += ["-np", str(mpi_ranks)]
-                        cmd += expcore.command(
-                            experiment_suite.executable,
-                            ".",
-                            input,
-                            mpi_ranks,
-                            threads,
-                            escape=False,
-                            **local_config,
-                        )
-                        print(
-                            f"Running config {i} on {input_name} using {mpi_ranks} ranks and {threads} threads per rank ... ",
-                            end="",
-                        )
-                        print(cmd)
-                        sys.stdout.flush()
-                        with open(log_path, "w") as log_file:
-                            with open(err_path, "w") as err_file:
-                                ret = subprocess.run(
-                                    cmd, stdout=log_file, stderr=err_file
-                                )
-                        if ret.returncode == 0:
-                            # if self.verify_results and input.triangles:
-                            #    print('finished.', end='')
-                            #    with open(log_path) as output:
-                            #        triangles = int(
-                            #            json.load(output)["stats"][0]
-                            #            ["counted_triangles"])
-                            #    if triangles == input.triangles:
-                            #        print(' correct.')
-                            #    else:
-                            #        self.incorrect += 1
-                            #        print(' incorrect.')
-                            # else:
-                            print("finished.")
-                        else:
-                            self.failed += 1
-                            print("failed.")
-        print(f"Finished suite {experiment_suite.name}.")
-
-
-class SBatchRunner:
-
+class BaseRunner:
     def __init__(
         self,
         suite_name,
         experiment_data_directory,
         machine,
         output_directory,
-        job_output_directory,
-        sbatch_template,
         command_template,
-        module_config,
-        time_limit,
-        use_test_partition=False,
     ):
         # append experiment_data_dir with current date
         data_suffix = date.today().strftime("%y_%m_%d")
@@ -146,50 +51,11 @@ class SBatchRunner:
             if output_directory
             else (self.experiment_data_directory / "output")
         )
-        self.job_output_directory = (
-            Path(job_output_directory)
-            if job_output_directory
-            else (self.experiment_data_directory / "jobfiles")
-        )
         self.output_directory.mkdir(exist_ok=True, parents=True)
-        self.job_output_directory.mkdir(exist_ok=True, parents=True)
-
-        self.module_config = module_config
-        self.time_limit = time_limit
-        self.use_test_partition = use_test_partition
-        self.command_template = None
-        self.sbatch_template = None
+        if not command_template:
+            command_template = self.default_command_template()
+        self.command_template = command_template
         self.tasks_per_node = None
-
-    def required_nodes(self, cores, tasks_per_node):
-        return int(max(int(m.ceil(float(cores) / tasks_per_node)), 1))
-
-    def get_queue(self, cores, tasks_per_node):
-        nodes = self.required_nodes(cores, tasks_per_node)
-        if nodes <= 16:
-            return "micro"
-        elif nodes <= 768:
-            return "general"
-        else:
-            return "large"
-
-    def required_islands(self, nodes):
-        if nodes > 768:
-            return 2
-        else:
-            return 1
-
-    # def make_cmd_for_config(
-    #    self,
-    #    suite: ExperimentSuite,
-    #    input,
-    #    config_job_name,
-    #    config_index,
-    #    mpi_ranks,
-    #    threads_per_rank,
-    #    config,
-    # ):
-    #    raise NotImplementedError("Please implement this method.")
 
     def make_cmd_for_config(
         self,
@@ -218,10 +84,131 @@ class SBatchRunner:
         return cmd
 
     def execute(self, experiment_suite: ExperimentSuite):
+        raise NotImplementedError("Please implement this method.")
+
+    def default_command_template(self):
+        raise RuntimeError("No default for command template, please provide one")
+
+sbatch_template_dir = Path(__file__).parent / "sbatch-templates"
+command_template_dir = Path(__file__).parent / "command-templates"
+
+class SharedMemoryRunner(BaseRunner):
+
+    def default_command_template(self):
+        return command_template_dir / "command_template_shared_oversubscribe.txt"
+
+    def __init__(
+        self,
+        suite_name,
+        experiment_data_directory,
+        output_directory,
+        command_template
+    ):
+        BaseRunner.__init__(self, suite_name, experiment_data_directory, "shared", output_directory, command_template)
+        self.failed = 0
+        self.total_jobs = 0
+
+    def execute(self, experiment_suite: ExperimentSuite):
+        print(f"Running suite {experiment_suite.name} ...")
+        with open(self.output_directory / "config.json", "w") as file:
+            json.dump(experiment_suite.configs, file, indent=4)
+        with open(self.command_template) as template_file:
+            command_template = template_file.read()
+        command_template = Template(command_template)
+        for input in experiment_suite.inputs:
+            for i, config in enumerate(experiment_suite.configs):
+                for ncores in experiment_suite.cores:
+                    for threads in experiment_suite.threads_per_rank:
+                        local_config = config.copy()
+                        mpi_ranks = ncores // threads
+                        if isinstance(input, expcore.InputGraph):
+                            input_name = input.name
+                        else:
+                            input_name = str(input)
+                        jobname = f"{input_name}-np{mpi_ranks}-t{threads}"
+                        config_job_name = jobname + "-c" + str(i)
+                        json_output_prefix_path = (
+                            self.output_directory / f"{config_job_name}_timer.json"
+                        )
+                        local_config["json_output_path"] = str(json_output_prefix_path)
+                        log_path = self.output_directory / f"{config_job_name}-log.txt"
+                        err_path = self.output_directory / f"{config_job_name}-error-log.txt"
+
+                        cmd = self.make_cmd_for_config(
+                            experiment_suite,
+                            input,
+                            config_job_name,
+                            i,
+                            mpi_ranks,
+                            threads,
+                            config
+                        )
+                        cmd_string = command_template.substitute(cmd=' '.join(cmd), mpi_ranks=mpi_ranks)
+                        print(
+                            f"Running config {i} on {input_name} using {mpi_ranks} ranks and {threads} threads per rank ... ",
+                        )
+                        print(cmd_string, end="")
+                        sys.stdout.flush()
+                        with open(log_path, "w") as log_file:
+                            with open(err_path, "w") as err_file:
+                                ret = subprocess.run(
+                                    cmd_string, stdout=log_file, stderr=err_file, shell=True
+                                )
+                        if ret.returncode == 0:
+                            print("finished.")
+                        else:
+                            self.failed += 1
+                            print("failed.")
+                        self.total_jobs += 1
+        print(f"Finished suite {experiment_suite.name}. Output files in {self.output_directory}")
+        print(
+            f"Summary: {self.failed} out of {self.total_jobs} failed."
+        )
+
+class SBatchRunner(BaseRunner):
+
+    def default_sbatch_template(self):
+        raise RuntimeError("No default for command template, please provide one")
+
+    def __init__(
+        self,
+        suite_name,
+        experiment_data_directory,
+        machine,
+        output_directory,
+        job_output_directory,
+        sbatch_template,
+        command_template,
+        module_config,
+        time_limit,
+        use_test_partition=False,
+    ):
+        BaseRunner.__init__(
+            self,
+            suite_name,
+            experiment_data_directory,
+            machine,
+            output_directory,
+            command_template
+        )
+        self.job_output_directory = (
+            Path(job_output_directory)
+            if job_output_directory
+            else (self.experiment_data_directory / "jobfiles")
+        )
+        self.job_output_directory.mkdir(exist_ok=True, parents=True)
+
+        self.module_config = module_config
+        self.time_limit = time_limit
+        self.use_test_partition = use_test_partition
+        if not sbatch_template:
+            sbatch_template = self.default_sbatch_template()
+        self.sbatch_template = sbatch_template
+        
+    def execute(self, experiment_suite: ExperimentSuite):
         project = os.environ.get("PROJECT", "PROJECT_NOT_SET")
         with open(self.output_directory / "config.json", "w") as file:
             json.dump(experiment_suite.configs, file, indent=4)
-        script_path = Path(os.path.dirname(__file__))
         with open(self.sbatch_template) as template_file:
             template = template_file.read()
         template = Template(template)
@@ -320,6 +307,12 @@ class SBatchRunner:
 
 class SuperMUCRunner(SBatchRunner):
 
+    def default_command_template(self):
+        return command_template_dir / "command_template_intel.txt"
+
+    def default_sbatch_template(self):
+        return sbatch_template_dir / "supermuc.txt"
+
     def __init__(
         self,
         suite_name,
@@ -347,13 +340,7 @@ class SuperMUCRunner(SBatchRunner):
             time_limit,
             use_test_partition,
         )
-        self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 64
-        script_path = Path(os.path.dirname(__file__))
-        self.sbatch_template = (
-            sbatch_template
-            if sbatch_template is not None
-            else script_path / "sbatch-templates/supermuc.txt"
-        )
+        self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 48
 
     def get_queue(self, cores, tasks_per_node, use_test_partition):
         nodes = self.required_nodes(cores, tasks_per_node)
@@ -372,6 +359,9 @@ class SuperMUCRunner(SBatchRunner):
 
 
 class HorekaRunner(SBatchRunner):
+
+    def default_sbatch_template(self):
+        return sbatch_template_dir / "horeka.txt"
 
     def __init__(
         self,
@@ -401,17 +391,6 @@ class HorekaRunner(SBatchRunner):
             use_test_partition,
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 76
-        script_path = Path(os.path.dirname(__file__))
-        self.sbatch_template = (
-            sbatch_template
-            if sbatch_template is not None
-            else script_path / "sbatch-templates/horeka.txt"
-        )
-        self.command_template = (
-            command_template
-            if command_template is not None
-            else script_path / "command-templates/horeka-OpenMPI.txt"
-        )
 
     def get_queue(self, cores, tasks_per_node, use_test_partition):
         nodes = self.required_nodes(cores, tasks_per_node)
@@ -427,6 +406,12 @@ class HorekaRunner(SBatchRunner):
 
 
 class GenericDistributedMemoryRunner(SBatchRunner):
+    def default_command_template(self):
+        return command_template_dir / "command_template_generic.txt"
+
+    def default_sbatch_template(self):
+        return sbatch_template_dir / "generic_job_files.txt"
+
     def __init__(
         self,
         suite_name,
@@ -455,12 +440,6 @@ class GenericDistributedMemoryRunner(SBatchRunner):
             use_test_partition,
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 1
-        script_path = Path(os.path.dirname(__file__))
-        self.sbatch_template = (
-            sbatch_template
-            if sbatch_template is not None
-            else script_path / "sbatch-templates/sbatch_template.txt"
-        )
 
     def get_queue(self, cores, tasks_per_node, use_test_partition):
         return "generic_partition"
@@ -476,7 +455,7 @@ def get_runner(args, suite):
             suite.name,
             args.experiment_data_dir,
             args.output_dir,
-            verify_results=args.verify,
+            args.command_template
         )
         return runner
 

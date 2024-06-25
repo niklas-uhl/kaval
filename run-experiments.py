@@ -1,6 +1,8 @@
+#!/bin/env python
+
 # MIT License
 #
-# Copyright (c) 2020-2023 Tim Niklas Uhl
+# Copyright (c) 2020-2024 Tim Niklas Uhl
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -66,13 +68,16 @@ def main():
         default=default_experiment_data_dir,
         help="Directory in which all relevant generated data (jobfiles and outputs) are stored.",
     )
+    sbatch_template_dir = Path(__file__).parent / "sbatch-templates"
     parser.add_argument(
         "--sbatch-template",
+        # default=sbatch_template_dir / "generic_job_files.txt",
         help="The path to the sbatch template to be used. The template likely needs to be adapted for each execution platform.",
     )
+    command_template_dir = Path(__file__).parent / "command-templates"
     parser.add_argument(
         "--command-template",
-        default=None,
+        # default=command_template_dir / "command_template_generic.txt",
         help="The path to the command template to be used. The template likely needs to be adapted for each mpi implementation/single-threaded vs. multithreaded execution.",
     )
     parser.add_argument(
@@ -81,7 +86,6 @@ def main():
     )
 
     parser.add_argument("--list", action="store_true")
-    parser.add_argument("--verify", action="store_true")
 
     parser.add_argument("--job-output-dir")
 
@@ -119,12 +123,6 @@ def main():
         if suite:
             runner = get_runner(args, suite)
             runner.execute(suite)
-
-    if args.machine == "shared":
-        print(
-            f"Summary: {runner.failed} jobs failed, {runner.incorrect} jobs returned an incorrect result."
-        )
-
-
+   
 if __name__ == "__main__":
     main()
