@@ -98,7 +98,7 @@ command_template_dir = Path(__file__).parent / "command-templates"
 class SharedMemoryRunner(BaseRunner):
 
     def default_command_template(self):
-        return command_template_dir / "command_template_shared_oversubscribe.txt"
+        return command_template_dir / "command_template_shared.txt"
 
     def __init__(
         self,
