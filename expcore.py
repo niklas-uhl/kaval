@@ -266,7 +266,7 @@ def load_suite_from_yaml(path):
             if "generator" in graph:
                 generator = graph.pop("generator")
                 if generator == "kagen":
-                    inputs.append(KaGenGraph(**graph))
+                    inputs.extend([KaGenGraph(**graph_variant) for graph_variant in explode(graph)])
                 elif generator == "dummy":
                     inputs.append(DummyInstance(**graph))
                 else:
