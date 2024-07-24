@@ -200,6 +200,7 @@ class ExperimentSuite:
         configs=[],
         tasks_per_node=None,
         time_limit=None,
+        seeds = None,
         input_time_limit={},
     ):
         self.name = name
@@ -210,6 +211,7 @@ class ExperimentSuite:
         self.configs = configs
         self.tasks_per_node = tasks_per_node
         self.time_limit = time_limit
+        self.seeds = seeds
         self.input_time_limit = input_time_limit
 
     def set_input_time_limit(self, input_name, time_limit):
@@ -291,6 +293,7 @@ def load_suite_from_yaml(path):
         configs,
         tasks_per_node=data.get("tasks_per_node"),
         time_limit=data.get("time_limit"),
+        seeds=data.get("seeds", [0]),
         input_time_limit=time_limits,
     )
 

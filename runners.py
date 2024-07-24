@@ -67,6 +67,7 @@ class BaseRunner:
         config_index,
         mpi_ranks,
         threads_per_rank,
+        seed,
         config,
     ):
         json_output_prefix_path = (
@@ -75,6 +76,7 @@ class BaseRunner:
         config = config.copy()
         if not self.omit_json_output_path:
             config["json_output_path"] = str(json_output_prefix_path)
+        config["seed"] = seed
         cmd = expcore.command(
             suite.executable,
             ".",
@@ -126,48 +128,50 @@ class SharedMemoryRunner(BaseRunner):
                 for ncores in experiment_suite.cores:
                     if ncores > self.max_cores:
                         continue
-                    for threads in experiment_suite.threads_per_rank:
-                        local_config = config.copy()
-                        mpi_ranks = ncores // threads
-                        if isinstance(input, expcore.InputGraph):
-                            input_name = input.name
-                        else:
-                            input_name = str(input)
-                        jobname = f"{input_name}-np{mpi_ranks}-t{threads}"
-                        config_job_name = jobname + "-c" + str(i)
-                        json_output_prefix_path = (
-                            self.output_directory / f"{config_job_name}_timer.json"
-                        )
-                        local_config["json_output_path"] = str(json_output_prefix_path)
-                        log_path = self.output_directory / f"{config_job_name}-log.txt"
-                        err_path = self.output_directory / f"{config_job_name}-error-log.txt"
+                    for seed in experiment_suite.seeds:
+                        for threads in experiment_suite.threads_per_rank:
+                            local_config = config.copy()
+                            mpi_ranks = ncores // threads
+                            if isinstance(input, expcore.InputGraph):
+                                input_name = input.name
+                            else:
+                                input_name = str(input)
+                            jobname = f"{input_name}-np{mpi_ranks}-t{threads}"
+                            config_job_name = jobname + "-c" + str(i)
+                            json_output_prefix_path = (
+                                self.output_directory / f"{config_job_name}_timer.json"
+                            )
+                            local_config["json_output_path"] = str(json_output_prefix_path)
+                            log_path = self.output_directory / f"{config_job_name}-log.txt"
+                            err_path = self.output_directory / f"{config_job_name}-error-log.txt"
 
-                        cmd = self.make_cmd_for_config(
-                            experiment_suite,
-                            input,
-                            config_job_name,
-                            i,
-                            mpi_ranks,
-                            threads,
-                            config
-                        )
-                        cmd_string = command_template.substitute(cmd=' '.join(cmd), mpi_ranks=mpi_ranks)
-                        print(
-                            f"Running config {i} on {input_name} using {mpi_ranks} ranks and {threads} threads per rank ... ",
-                        )
-                        print(cmd_string, end="")
-                        sys.stdout.flush()
-                        with open(log_path, "w") as log_file:
-                            with open(err_path, "w") as err_file:
-                                ret = subprocess.run(
-                                    cmd_string, stdout=log_file, stderr=err_file, shell=True
-                                )
-                        if ret.returncode == 0:
-                            print("finished.")
-                        else:
-                            self.failed += 1
-                            print("failed.")
-                        self.total_jobs += 1
+                            cmd = self.make_cmd_for_config(
+                                experiment_suite,
+                                input,
+                                config_job_name,
+                                i,
+                                mpi_ranks,
+                                threads,
+                                seed,
+                                config
+                            )
+                            cmd_string = command_template.substitute(cmd=' '.join(cmd), mpi_ranks=mpi_ranks)
+                            print(
+                                f"Running config {i} on {input_name} using {mpi_ranks} ranks and {threads} threads per rank ... ",
+                            )
+                            print(cmd_string, end="")
+                            sys.stdout.flush()
+                            with open(log_path, "w") as log_file:
+                                with open(err_path, "w") as err_file:
+                                    ret = subprocess.run(
+                                        cmd_string, stdout=log_file, stderr=err_file, shell=True
+                                    )
+                            if ret.returncode == 0:
+                                print("finished.")
+                            else:
+                                self.failed += 1
+                                print("failed.")
+                            self.total_jobs += 1
         print(f"Finished suite {experiment_suite.name}. Output files in {self.output_directory}")
         print(
             f"Summary: {self.failed} out of {self.total_jobs} failed."
@@ -269,31 +273,33 @@ class SBatchRunner(BaseRunner):
                     ranks_per_node = tasks_per_node // threads_per_rank
                     jobname = f"{input_name}-np{mpi_ranks}-t{threads_per_rank}"
                     for i, config in enumerate(experiment_suite.configs):
-                        job_time_limit = experiment_suite.get_input_time_limit(
-                            input.name
-                        )
-                        if not job_time_limit:
-                            job_time_limit = self.time_limit
-                        time_limit += job_time_limit
-                        config_jobname = jobname + "-c" + str(i)
-                        cmd = self.make_cmd_for_config(
-                            experiment_suite,
-                            input,
-                            config_jobname,
-                            i,
-                            mpi_ranks,
-                            threads_per_rank,
-                            config,
-                        )
-                        cmd_string = command_template.substitute(
-                            cmd=" ".join(cmd),
-                            jobname=config_jobname,
-                            mpi_ranks=mpi_ranks,
-                            threads_per_rank=threads_per_rank,
-                            ranks_per_node=ranks_per_node,
-                            timeout=job_time_limit * 60,
-                        )
-                        commands.append(cmd_string)
+                        for seed in experiment_suite.seeds:
+                            job_time_limit = experiment_suite.get_input_time_limit(
+                                input.name
+                            )
+                            if not job_time_limit:
+                                job_time_limit = self.time_limit
+                            time_limit += job_time_limit
+                            config_jobname = jobname + "-c" + str(i) + "-s" + str(seed)
+                            cmd = self.make_cmd_for_config(
+                                experiment_suite,
+                                input,
+                                config_jobname,
+                                i,
+                                mpi_ranks,
+                                threads_per_rank,
+                                seed,
+                                config,
+                            )
+                            cmd_string = command_template.substitute(
+                                cmd=" ".join(cmd),
+                                jobname=config_jobname,
+                                mpi_ranks=mpi_ranks,
+                                threads_per_rank=threads_per_rank,
+                                ranks_per_node=ranks_per_node,
+                                timeout=job_time_limit * 60,
+                            )
+                            commands.append(cmd_string)
                 subs["commands"] = "\n".join(commands)
                 subs["time_string"] = time.strftime(
                     "%H:%M:%S", time.gmtime(time_limit * 60)
