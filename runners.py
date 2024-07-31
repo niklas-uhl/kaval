@@ -122,11 +122,11 @@ class SharedMemoryRunner(BaseRunner):
             command_template = template_file.read()
         command_template = Template(command_template)
         for input in experiment_suite.inputs:
-            for i, config in enumerate(experiment_suite.configs):
-                for ncores in experiment_suite.cores:
-                    if ncores > self.max_cores:
-                        continue
-                    for threads in experiment_suite.threads_per_rank:
+            for ncores in experiment_suite.cores:
+                if ncores > self.max_cores:
+                    continue
+                for threads in experiment_suite.threads_per_rank:
+                    for i, config in enumerate(experiment_suite.configs):
                         local_config = config.copy()
                         mpi_ranks = ncores // threads
                         if isinstance(input, expcore.InputGraph):
