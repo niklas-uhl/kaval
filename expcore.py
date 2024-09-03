@@ -102,11 +102,11 @@ class KaGenGraph(InputGraph):
             raise ValueError("KaGen graph requires a type")
         try:
             self.n = kwargs.get("n", 1 << int(kwargs["N"]))
-        except TypeError:
+        except (TypeError, KeyError):
             self.n = None
         try:
             self.m = kwargs.get("m", 1 << int(kwargs["M"]))
-        except TypeError:
+        except (TypeError, KeyError):
             self.m = None
         kwargs.pop("n", None)
         kwargs.pop("N", None)
