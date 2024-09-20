@@ -108,6 +108,9 @@ class KaGenGraph(InputGraph):
             self.m = kwargs.get("m", 1 << int(kwargs["M"]))
         except (TypeError, KeyError):
             self.m = None
+        self.edgeweights_generator = kwargs.get("edgeweights_generator")
+        self.edgeweights_range_begin = kwargs.get("edgeweights_range_begin")
+        self.edgeweights_range_end = kwargs.get("edgeweights_range_end")
         kwargs.pop("n", None)
         kwargs.pop("N", None)
         kwargs.pop("m", None)
@@ -135,6 +138,12 @@ class KaGenGraph(InputGraph):
             params.append(f"n={self.get_n(p)}")
         if self.m:
             params.append(f"m={self.get_m(p)}")
+        if self.edgeweights_generator:
+            params.append(f"edgeweights_generator={self.edgeweights_generator}")
+        if self.edgeweights_range_begin:
+            params.append(f"edgeweights_range_begin={self.edgeweights_range_begin}")
+        if self.edgeweights_range_end:
+            params.append(f"edgeweights_range_end={self.edgeweights_range_end}")
         kagen_option_string = ";".join(params)
         if escape:
             kagen_option_string = '"{}"'.format(kagen_option_string)
