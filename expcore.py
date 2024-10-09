@@ -42,6 +42,10 @@ class InputGraph:
     @property
     def name(self):
         return self._name
+    
+    @property
+    def short_name(self):
+        return self.name
 
 
 class FileInputGraph(InputGraph):
@@ -93,6 +97,14 @@ class FileInputGraph(InputGraph):
     def __repr__(self):
         return f"FileInputGraph({self.name, self.path, self.format, self.partitioned, self.partitions})"
 
+def stringify_params(params):
+    param_strings = []
+    for key, value in params.items():
+        if isinstance(value, bool):
+            param_strings.append(key)
+        else:
+            param_strings.append(f"{key}={value}")
+    return param_strings
 
 class KaGenGraph(InputGraph):
 
@@ -133,7 +145,7 @@ class KaGenGraph(InputGraph):
 
     def args(self, mpi_ranks, threads_per_rank, escape):
         p = mpi_ranks * threads_per_rank
-        params = self.stringify_params()
+        params = stringify_params(self.params)
         if self.n:
             params.append(f"n={self.get_n(p)}")
         if self.m:
@@ -149,14 +161,7 @@ class KaGenGraph(InputGraph):
             kagen_option_string = '"{}"'.format(kagen_option_string)
         return ["--kagen_option_string", kagen_option_string]
 
-    def stringify_params(self):
-        param_strings = []
-        for key, value in self.params.items():
-            if isinstance(value, bool):
-                param_strings.append(key)
-            else:
-                param_strings.append(f"{key}={value}")
-        return param_strings
+
 
     @property
     def name(self):
@@ -165,10 +170,17 @@ class KaGenGraph(InputGraph):
             params.append(f"n={int(math.log2(self.n))}")
         if self.m:
             params.append(f"m={int(math.log2(self.m))}")
-        params += self.stringify_params()
+        params += stringify_params(self.params)
         if self.scale_weak:
             params.append("weak")
         name = f"KaGen_{'_'.join(params)}"
+        return slugify.slugify(name)
+    
+    @property
+    def short_name(self):
+        name = f"{self.params['type']}"
+        if self.n:
+            name += f"_n={int(math.log2(self.n))}"
         return slugify.slugify(name)
 
 

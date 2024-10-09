@@ -58,6 +58,7 @@ class BaseRunner:
         self.command_template = command_template
         self.omit_json_output_path = omit_json_output_path
         self.tasks_per_node = None
+        self.suite_name = suite_name
 
     def make_cmd_for_config(
         self,
@@ -91,6 +92,27 @@ class BaseRunner:
 
     def default_command_template(self):
         raise RuntimeError("No default for command template, please provide one")
+    
+    def config_name(self, iinput: int, input, mpi_ranks=None, threads=None, iconfig=None, cores=None):
+        if isinstance(input, expcore.InputGraph):
+            input_name = input.short_name
+        else:
+            input_name = str(input)
+        config = f"in{iinput}_{input_name}"
+        if cores:
+            config += f"-p{cores}"
+        else:
+            config += f"-r{mpi_ranks}"
+            if threads:
+                config += f"-t{threads}"
+            if iconfig:
+                config += f"-c{iconfig}"
+        return config
+        
+    def jobname(self, iinput: int, input, mpi_ranks=None, threads=None, iconfig=None, cores=None):
+        config_name = self.config_name(iinput, input, mpi_ranks, threads, iconfig, cores)
+        return f"{self.suite_name}-{config_name}"
+        
 
 sbatch_template_dir = Path(__file__).parent / "sbatch-templates"
 command_template_dir = Path(__file__).parent / "command-templates"
@@ -121,7 +143,7 @@ class SharedMemoryRunner(BaseRunner):
         with open(self.command_template) as template_file:
             command_template = template_file.read()
         command_template = Template(command_template)
-        for input in experiment_suite.inputs:
+        for iinput, input in enumerate(experiment_suite.inputs):
             for ncores in experiment_suite.cores:
                 if ncores > self.max_cores:
                     continue
@@ -129,12 +151,8 @@ class SharedMemoryRunner(BaseRunner):
                     for i, config in enumerate(experiment_suite.configs):
                         local_config = config.copy()
                         mpi_ranks = ncores // threads
-                        if isinstance(input, expcore.InputGraph):
-                            input_name = input.name
-                        else:
-                            input_name = str(input)
-                        jobname = f"{input_name}-np{mpi_ranks}-t{threads}"
-                        config_job_name = jobname + "-c" + str(i)
+
+                        config_job_name = self.config_name(iinput, input, mpi_ranks, threads, i)
                         json_output_prefix_path = (
                             self.output_directory / f"{config_job_name}_timer.json"
                         )
@@ -153,7 +171,7 @@ class SharedMemoryRunner(BaseRunner):
                         )
                         cmd_string = command_template.substitute(cmd=' '.join(cmd), mpi_ranks=mpi_ranks)
                         print(
-                            f"Running config {i} on {input_name} using {mpi_ranks} ranks and {threads} threads per rank ... ",
+                            f"Running config {i} on {input.name} using {mpi_ranks} ranks and {threads} threads per rank ... ",
                         )
                         print(cmd_string, end="")
                         sys.stdout.flush()
@@ -226,23 +244,18 @@ class SBatchRunner(BaseRunner):
             command_template = template_file.read()
         command_template = Template(command_template)
         njobs = 0
-        for input in experiment_suite.inputs:
-            if isinstance(input, expcore.InputGraph):
-                input_name = input.name
-            else:
-                input_name = str(input)
+        for iinput, input in enumerate(experiment_suite.inputs):
             for ncores in experiment_suite.cores:
                 if experiment_suite.tasks_per_node:
                     tasks_per_node = experiment_suite.tasks_per_node
                 else:
                     tasks_per_node = self.tasks_per_node
 
-                aggregate_jobname = (
-                    f"{experiment_suite.name}-{input_name}-cores{ncores}"
-                )
-                log_path = self.output_directory / f"{input_name}-cores{ncores}-log.txt"
+                aggregate_jobname = self.jobname(iinput, input, cores=ncores)
+                instance_name = self.config_name(iinput, input, cores=ncores)
+                log_path = self.output_directory / f"{instance_name}-log.txt"
                 err_log_path = (
-                    self.output_directory / f"{input_name}-cores{ncores}-error-log.txt"
+                    self.output_directory / f"{instance_name}-err.txt"
                 )
                 subs = {}
                 nodes = self.required_nodes(ncores, tasks_per_node)
@@ -267,7 +280,8 @@ class SBatchRunner(BaseRunner):
                 for threads_per_rank in experiment_suite.threads_per_rank:
                     mpi_ranks = ncores // threads_per_rank
                     ranks_per_node = tasks_per_node // threads_per_rank
-                    jobname = f"{input_name}-np{mpi_ranks}-t{threads_per_rank}"
+                    jobname = self.jobname(iinput, input, mpi_ranks, threads_per_rank)
+                    # jobname = f"{input_name}-np{mpi_ranks}-t{threads_per_rank}"
                     for i, config in enumerate(experiment_suite.configs):
                         job_time_limit = experiment_suite.get_input_time_limit(
                             input.name
@@ -275,7 +289,8 @@ class SBatchRunner(BaseRunner):
                         if not job_time_limit:
                             job_time_limit = self.time_limit
                         time_limit += job_time_limit
-                        config_jobname = jobname + "-c" + str(i)
+                        config_jobname = self.jobname(iinput, input, mpi_ranks, threads_per_rank, i)
+                        # config_jobname = jobname + "-c" + str(i)
                         cmd = self.make_cmd_for_config(
                             experiment_suite,
                             input,
