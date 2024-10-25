@@ -42,7 +42,7 @@ class InputGraph:
     @property
     def name(self):
         return self._name
-    
+
     @property
     def short_name(self):
         return self.name
@@ -97,6 +97,7 @@ class FileInputGraph(InputGraph):
     def __repr__(self):
         return f"FileInputGraph({self.name, self.path, self.format, self.partitioned, self.partitions})"
 
+
 def stringify_params(params):
     param_strings = []
     for key, value in params.items():
@@ -106,11 +107,14 @@ def stringify_params(params):
             param_strings.append(f"{key}={value}")
     return param_strings
 
+
 class KaGenGraph(InputGraph):
 
     def __init__(self, **kwargs):
         kwargs = kwargs.copy()
-        if not "type" in kwargs:
+        try:
+            self.type = kwargs.get("type")
+        except KeyError:
             raise ValueError("KaGen graph requires a type")
         try:
             self.n = kwargs.get("n", 1 << int(kwargs["N"]))
@@ -143,9 +147,27 @@ class KaGenGraph(InputGraph):
         else:
             return self.m
 
+    def preprocess_file_based_graphs_params(self, mpi_ranks):
+        params = self.params.copy()
+        if params.get("type") not in ["partitioned_file", "partitioned-file"]:
+            return params
+        try:
+            filename = params.get("filename")
+        except KeyError:
+            raise ValueError(
+                "A partitioned file input graph requires a filename paramerter."
+            )
+        path, graph_format = filename.rsplit(".", 1)
+        extended_filename = f"{path}_{mpi_ranks}.{graph_format}"
+        params["filename"] = extended_filename
+        params["distribution"] = "explicit"
+        params["explicit-distribution"] = extended_filename + ".partitions"
+        return params
+
     def args(self, mpi_ranks, threads_per_rank, escape):
         p = mpi_ranks * threads_per_rank
-        params = stringify_params(self.params)
+        params = self.preprocess_file_based_graphs_params(mpi_ranks)
+        params = stringify_params(params)
         if self.n:
             params.append(f"n={self.get_n(p)}")
         if self.m:
@@ -161,8 +183,6 @@ class KaGenGraph(InputGraph):
             kagen_option_string = '"{}"'.format(kagen_option_string)
         return ["--kagen_option_string", kagen_option_string]
 
-
-
     @property
     def name(self):
         params = []
@@ -175,7 +195,7 @@ class KaGenGraph(InputGraph):
             params.append("weak")
         name = f"KaGen_{'_'.join(params)}"
         return slugify.slugify(name)
-    
+
     @property
     def short_name(self):
         name = f"{self.params['type']}"
