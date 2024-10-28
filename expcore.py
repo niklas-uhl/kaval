@@ -159,6 +159,9 @@ class KaGenGraph(InputGraph):
             )
         path, graph_format = filename.rsplit(".", 1)
         extended_filename = f"{path}_{mpi_ranks}.{graph_format}"
+        params["type"] = (
+            "file"  # to date KaGen does not possess a special type for pre-partitioned graphs
+        )
         params["filename"] = extended_filename
         params["distribution"] = "explicit"
         params["explicit-distribution"] = extended_filename + ".partitions"
