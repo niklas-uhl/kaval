@@ -212,13 +212,40 @@ class DummyInstance(InputGraph):
         self.name_ = kwargs["name"]
         self.params = kwargs.copy()
         self.params.pop("name", None)
+        self.parse_scale_weak_params(self.params)
 
-    def args(self, mpi_rank, treeads_per_rank, escape):
+    def parse_scale_weak_params(self, kwargs):
+        scale_weak_params = kwargs.get("scale_weak")
+        if scale_weak_params is None:
+            self.scale_weak_params = []
+        else:
+            if not isinstance(scale_weak_params, list):
+                scale_weak = [scale_weak_params]
+            self.scale_weak_params = scale_weak_params
+
+    def get_scaled_value(self, parameter, value, p):
+        if self.do_scale_parameter(parameter):
+            if not isinstance(value, int):
+                raise ValueError(
+                    f"Weak scaling parameter '{parameter}' has a non-integer value of '{value}'."
+                )
+            return int(value) * p
+        else:
+            return int(value)
+
+    def do_scale_parameter(self, parameter):
+        return parameter in self.scale_weak_params
+
+    def args(self, mpi_ranks, threads_per_rank, escape):
+        p = mpi_ranks * threads_per_rank
         params = []
         for key, value in self.params.items():
-            params.append(f"--{key}")
-            if not isinstance(value, bool):
-                params.append(f"{value}")
+            if self.do_scale_parameter(key):
+                params.append(f"--{key} {self.get_scaled_value(key, value, p)}")
+            else:
+                params.append(f"--{key}")
+                if not isinstance(value, bool):
+                    params.append(f"{value}")
         return params
 
     @property
