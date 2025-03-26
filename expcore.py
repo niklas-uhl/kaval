@@ -266,6 +266,7 @@ class ExperimentSuite:
         self,
         name: str,
         executable: None,
+        output_path_option_name,
         cores=[],
         threads_per_rank=[1],
         inputs=[],
@@ -276,6 +277,7 @@ class ExperimentSuite:
     ):
         self.name = name
         self.executable = executable
+        self.output_path_option_name = output_path_option_name
         self.cores = cores
         self.threads_per_rank = threads_per_rank
         self.inputs = inputs
@@ -354,9 +356,14 @@ def load_suite_from_yaml(path):
         executable = data["executable"]
     else:
         executable = None
+    if "output_path_option_name" in data:
+        output_path_option_name = data["output_path_option_name"]
+    else:
+        output_path_option_name = "json_output_path"
     return ExperimentSuite(
         data["name"],
         executable,
+        output_path_option_name,
         data["ncores"],
         data.get("threads_per_rank", [1]),
         inputs,

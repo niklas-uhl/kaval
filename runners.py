@@ -28,17 +28,19 @@ import math as m
 from string import Template
 import time
 from datetime import date
+import copy
 
 
 class BaseRunner:
     def __init__(
         self,
         suite_name,
+        output_path_option_name,
         experiment_data_directory,
         machine,
         output_directory,
         command_template,
-        omit_json_output_path=False,
+        omit_output_path=False,
     ):
         # append experiment_data_dir with current date
         data_suffix = date.today().strftime("%y_%m_%d")
@@ -56,13 +58,14 @@ class BaseRunner:
         if not command_template:
             command_template = self.default_command_template()
         self.command_template = command_template
-        self.omit_json_output_path = omit_json_output_path
+        self.omit_output_path = omit_output_path
         self.tasks_per_node = None
         self.suite_name = suite_name
+        self.output_path_option_name = output_path_option_name
 
     def dump_config(self, experiment_suite: ExperimentSuite):
         with open(self.output_directory / "config.json", "w") as file:
-            configs = experiment_suite.configs.copy()
+            configs = copy.deepcopy(experiment_suite.configs)
             for i, c in enumerate(configs):
                 c["idx"] = i
             json.dump(configs, file, indent=4)
@@ -77,12 +80,10 @@ class BaseRunner:
         threads_per_rank,
         config,
     ):
-        json_output_prefix_path = (
-            self.output_directory / f"{config_job_name}_timer.json"
-        )
+        json_output_prefix_path = self.output_directory / config_job_name
         config = config.copy()
-        if not self.omit_json_output_path:
-            config["json_output_path"] = str(json_output_prefix_path)
+        if not self.omit_output_path:
+            config[self.output_path_option_name] = str(json_output_prefix_path)
         cmd = expcore.command(
             suite.executable,
             ".",
@@ -139,20 +140,22 @@ class SharedMemoryRunner(BaseRunner):
     def __init__(
         self,
         suite_name,
+        output_path_option_name,
         max_cores: int,
         experiment_data_directory,
         output_directory,
         command_template,
-        omit_json_output_path,
+        omit_output_path,
     ):
         BaseRunner.__init__(
             self,
             suite_name,
+            output_path_option_name,
             experiment_data_directory,
             "shared",
             output_directory,
             command_template,
-            omit_json_output_path,
+            omit_output_path,
         )
         self.max_cores = max_cores
         self.failed = 0
@@ -230,6 +233,7 @@ class SBatchRunner(BaseRunner):
     def __init__(
         self,
         suite_name,
+        output_path_option_name,
         experiment_data_directory,
         machine,
         output_directory,
@@ -239,16 +243,17 @@ class SBatchRunner(BaseRunner):
         module_config,
         time_limit,
         use_test_partition=False,
-        omit_json_output_path=False,
+        omit_output_path=False,
     ):
         BaseRunner.__init__(
             self,
             suite_name,
+            output_path_option_name,
             experiment_data_directory,
             machine,
             output_directory,
             command_template,
-            omit_json_output_path,
+            omit_output_path,
         )
         self.job_output_directory = (
             Path(job_output_directory)
@@ -371,6 +376,7 @@ class SuperMUCRunner(SBatchRunner):
     def __init__(
         self,
         suite_name,
+        output_path_option_name,
         experiment_data_directory,
         machine,
         output_directory,
@@ -381,11 +387,12 @@ class SuperMUCRunner(SBatchRunner):
         tasks_per_node,
         time_limit,
         use_test_partition=False,
-        omit_json_output_path=False,
+        omit_output_path=False,
     ):
         SBatchRunner.__init__(
             self,
             suite_name,
+            output_path_option_name,
             experiment_data_directory,
             machine,
             output_directory,
@@ -395,7 +402,7 @@ class SuperMUCRunner(SBatchRunner):
             module_config,
             time_limit,
             use_test_partition,
-            omit_json_output_path,
+            omit_output_path,
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 48
 
@@ -423,6 +430,7 @@ class HorekaRunner(SBatchRunner):
     def __init__(
         self,
         suite_name,
+        output_path_option_name,
         experiment_data_directory,
         machine,
         output_directory,
@@ -433,11 +441,12 @@ class HorekaRunner(SBatchRunner):
         tasks_per_node,
         time_limit,
         use_test_partition=False,
-        omit_json_output_path=False,
+        omit_output_path=False,
     ):
         SBatchRunner.__init__(
             self,
             suite_name,
+            output_path_option_name,
             experiment_data_directory,
             machine,
             output_directory,
@@ -447,7 +456,7 @@ class HorekaRunner(SBatchRunner):
             module_config,
             time_limit,
             use_test_partition,
-            omit_json_output_path,
+            omit_output_path,
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 76
 
@@ -474,6 +483,7 @@ class GenericDistributedMemoryRunner(SBatchRunner):
     def __init__(
         self,
         suite_name,
+        output_path_option_name,
         experiment_data_directory,
         machine,
         output_directory,
@@ -484,11 +494,12 @@ class GenericDistributedMemoryRunner(SBatchRunner):
         tasks_per_node,
         time_limit,
         use_test_partition=False,
-        omit_json_output_path=False,
+        omit_output_path=False,
     ):
         SBatchRunner.__init__(
             self,
             suite_name,
+            output_path_option_name,
             experiment_data_directory,
             machine,
             output_directory,
@@ -498,7 +509,7 @@ class GenericDistributedMemoryRunner(SBatchRunner):
             module_config,
             time_limit,
             use_test_partition,
-            omit_json_output_path,
+            omit_output_path,
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 1
 
@@ -514,17 +525,19 @@ def get_runner(args, suite):
     if args.machine == "shared":
         runner = SharedMemoryRunner(
             suite.name,
+            suite.output_path_option_name,
             args.max_cores,
             args.experiment_data_dir,
             args.output_dir,
             args.command_template,
-            args.omit_json_output_path,
+            args.omit_output_path,
         )
         return runner
 
     elif args.machine in "supermuc":
         return SuperMUCRunner(
             suite.name,
+            suite.output_path_option_name,
             args.experiment_data_dir,
             args.machine,
             args.output_dir,
@@ -535,11 +548,12 @@ def get_runner(args, suite):
             args.tasks_per_node,
             args.time_limit,
             args.test,
-            args.omit_json_output_path,
+            args.omit_output_path,
         )
     elif args.machine in "horeka":
         return HorekaRunner(
             suite.name,
+            suite.output_path_option_name,
             args.experiment_data_dir,
             args.machine,
             args.output_dir,
@@ -550,11 +564,12 @@ def get_runner(args, suite):
             args.tasks_per_node,
             args.time_limit,
             args.test,
-            args.omit_json_output_path,
+            args.omit_output_path,
         )
     elif args.machine == "generic-job-file":
         return GenericDistributedMemoryRunner(
             suite.name,
+            suite.output_path_option_name,
             args.experiment_data_dir,
             args.machine,
             args.output_dir,
@@ -565,7 +580,7 @@ def get_runner(args, suite):
             args.tasks_per_node,
             args.time_limit,
             args.test,
-            args.omit_json_output_path,
+            args.omit_output_path,
         )
     else:
         exit("Unknown machine type: " + args.machine)
