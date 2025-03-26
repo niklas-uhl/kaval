@@ -213,6 +213,7 @@ class DummyInstance(InputGraph):
         self.params = kwargs.copy()
         self.params.pop("name", None)
         self.parse_scale_weak_params(self.params)
+        self.params.pop("scale_weak", None)
 
     def parse_scale_weak_params(self, kwargs):
         scale_weak_params = kwargs.get("scale_weak")
