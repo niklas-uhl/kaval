@@ -92,8 +92,10 @@ class BaseRunner:
 
     def default_command_template(self):
         raise RuntimeError("No default for command template, please provide one")
-    
-    def config_name(self, iinput: int, input, mpi_ranks=None, threads=None, iconfig=None, cores=None):
+
+    def config_name(
+        self, iinput: int, input, mpi_ranks=None, threads=None, iconfig=None, cores=None
+    ):
         if isinstance(input, expcore.InputGraph):
             input_name = input.short_name
         else:
@@ -105,17 +107,22 @@ class BaseRunner:
             config += f"-r{mpi_ranks}"
             if threads:
                 config += f"-t{threads}"
-            if iconfig:
+            if iconfig is not None:
                 config += f"-c{iconfig}"
         return config
-        
-    def jobname(self, iinput: int, input, mpi_ranks=None, threads=None, iconfig=None, cores=None):
-        config_name = self.config_name(iinput, input, mpi_ranks, threads, iconfig, cores)
+
+    def jobname(
+        self, iinput: int, input, mpi_ranks=None, threads=None, iconfig=None, cores=None
+    ):
+        config_name = self.config_name(
+            iinput, input, mpi_ranks, threads, iconfig, cores
+        )
         return f"{self.suite_name}-{config_name}"
-        
+
 
 sbatch_template_dir = Path(__file__).parent / "sbatch-templates"
 command_template_dir = Path(__file__).parent / "command-templates"
+
 
 class SharedMemoryRunner(BaseRunner):
 
@@ -129,9 +136,17 @@ class SharedMemoryRunner(BaseRunner):
         experiment_data_directory,
         output_directory,
         command_template,
-        omit_json_output_path
+        omit_json_output_path,
     ):
-        BaseRunner.__init__(self, suite_name, experiment_data_directory, "shared", output_directory, command_template, omit_json_output_path)
+        BaseRunner.__init__(
+            self,
+            suite_name,
+            experiment_data_directory,
+            "shared",
+            output_directory,
+            command_template,
+            omit_json_output_path,
+        )
         self.max_cores = max_cores
         self.failed = 0
         self.total_jobs = 0
@@ -152,13 +167,17 @@ class SharedMemoryRunner(BaseRunner):
                         local_config = config.copy()
                         mpi_ranks = ncores // threads
 
-                        config_job_name = self.config_name(iinput, input, mpi_ranks, threads, i)
+                        config_job_name = self.config_name(
+                            iinput, input, mpi_ranks, threads, i
+                        )
                         json_output_prefix_path = (
                             self.output_directory / f"{config_job_name}_timer.json"
                         )
                         local_config["json_output_path"] = str(json_output_prefix_path)
                         log_path = self.output_directory / f"{config_job_name}-log.txt"
-                        err_path = self.output_directory / f"{config_job_name}-error-log.txt"
+                        err_path = (
+                            self.output_directory / f"{config_job_name}-error-log.txt"
+                        )
 
                         cmd = self.make_cmd_for_config(
                             experiment_suite,
@@ -167,9 +186,11 @@ class SharedMemoryRunner(BaseRunner):
                             i,
                             mpi_ranks,
                             threads,
-                            config
+                            config,
                         )
-                        cmd_string = command_template.substitute(cmd=' '.join(cmd), mpi_ranks=mpi_ranks)
+                        cmd_string = command_template.substitute(
+                            cmd=" ".join(cmd), mpi_ranks=mpi_ranks
+                        )
                         print(
                             f"Running config {i} on {input.name} using {mpi_ranks} ranks and {threads} threads per rank ... ",
                         )
@@ -178,7 +199,10 @@ class SharedMemoryRunner(BaseRunner):
                         with open(log_path, "w") as log_file:
                             with open(err_path, "w") as err_file:
                                 ret = subprocess.run(
-                                    cmd_string, stdout=log_file, stderr=err_file, shell=True
+                                    cmd_string,
+                                    stdout=log_file,
+                                    stderr=err_file,
+                                    shell=True,
                                 )
                         if ret.returncode == 0:
                             print("finished.")
@@ -186,10 +210,11 @@ class SharedMemoryRunner(BaseRunner):
                             self.failed += 1
                             print("failed.")
                         self.total_jobs += 1
-        print(f"Finished suite {experiment_suite.name}. Output files in {self.output_directory}")
         print(
-            f"Summary: {self.failed} out of {self.total_jobs} failed."
+            f"Finished suite {experiment_suite.name}. Output files in {self.output_directory}"
         )
+        print(f"Summary: {self.failed} out of {self.total_jobs} failed.")
+
 
 class SBatchRunner(BaseRunner):
 
@@ -217,7 +242,7 @@ class SBatchRunner(BaseRunner):
             machine,
             output_directory,
             command_template,
-            omit_json_output_path
+            omit_json_output_path,
         )
         self.job_output_directory = (
             Path(job_output_directory)
@@ -232,7 +257,7 @@ class SBatchRunner(BaseRunner):
         if not sbatch_template:
             sbatch_template = self.default_sbatch_template()
         self.sbatch_template = sbatch_template
-        
+
     def execute(self, experiment_suite: ExperimentSuite):
         project = os.environ.get("PROJECT", "PROJECT_NOT_SET")
         with open(self.output_directory / "config.json", "w") as file:
@@ -254,9 +279,7 @@ class SBatchRunner(BaseRunner):
                 aggregate_jobname = self.jobname(iinput, input, cores=ncores)
                 instance_name = self.config_name(iinput, input, cores=ncores)
                 log_path = self.output_directory / f"{instance_name}-log.txt"
-                err_log_path = (
-                    self.output_directory / f"{instance_name}-err.txt"
-                )
+                err_log_path = self.output_directory / f"{instance_name}-err.txt"
                 subs = {}
                 nodes = self.required_nodes(ncores, tasks_per_node)
                 subs["nodes"] = nodes
@@ -289,7 +312,9 @@ class SBatchRunner(BaseRunner):
                         if not job_time_limit:
                             job_time_limit = self.time_limit
                         time_limit += job_time_limit
-                        config_jobname = self.jobname(iinput, input, mpi_ranks, threads_per_rank, i)
+                        config_jobname = self.jobname(
+                            iinput, input, mpi_ranks, threads_per_rank, i
+                        )
                         # config_jobname = jobname + "-c" + str(i)
                         cmd = self.make_cmd_for_config(
                             experiment_suite,
