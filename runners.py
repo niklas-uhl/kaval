@@ -60,6 +60,13 @@ class BaseRunner:
         self.tasks_per_node = None
         self.suite_name = suite_name
 
+    def dump_config(self, experiment_suite: ExperimentSuite):
+        with open(self.output_directory / "config.json", "w") as file:
+            configs = experiment_suite.configs.copy()
+            for i, c in enumerate(configs):
+                c["idx"] = i
+            json.dump(configs, file, indent=4)
+
     def make_cmd_for_config(
         self,
         suite: ExperimentSuite,
@@ -153,8 +160,7 @@ class SharedMemoryRunner(BaseRunner):
 
     def execute(self, experiment_suite: ExperimentSuite):
         print(f"Running suite {experiment_suite.name} ...")
-        with open(self.output_directory / "config.json", "w") as file:
-            json.dump(experiment_suite.configs, file, indent=4)
+        self.dump_config(experiment_suite)
         with open(self.command_template) as template_file:
             command_template = template_file.read()
         command_template = Template(command_template)
@@ -260,8 +266,7 @@ class SBatchRunner(BaseRunner):
 
     def execute(self, experiment_suite: ExperimentSuite):
         project = os.environ.get("PROJECT", "PROJECT_NOT_SET")
-        with open(self.output_directory / "config.json", "w") as file:
-            json.dump(experiment_suite.configs, file, indent=4)
+        self.dump_config(experiment_suite)
         with open(self.sbatch_template) as template_file:
             template = template_file.read()
         template = Template(template)
