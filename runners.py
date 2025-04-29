@@ -29,6 +29,7 @@ from string import Template
 import time
 from datetime import date
 import copy
+import shutil
 
 
 class BaseRunner:
@@ -41,12 +42,15 @@ class BaseRunner:
         output_directory,
         command_template,
         omit_output_path=False,
+        fresh=False,
     ):
         # append experiment_data_dir with current date
         data_suffix = date.today().strftime("%y_%m_%d")
         self.experiment_data_directory = Path(experiment_data_directory) / (
             suite_name + "_" + data_suffix
         )
+        if (fresh):
+            shutil.rmtree(self.experiment_data_directory)
         self.experiment_data_directory.mkdir(exist_ok=True, parents=True)
         self.machine = machine
         self.output_directory = (
@@ -146,6 +150,7 @@ class SharedMemoryRunner(BaseRunner):
         output_directory,
         command_template,
         omit_output_path,
+        fresh,
     ):
         BaseRunner.__init__(
             self,
@@ -156,6 +161,7 @@ class SharedMemoryRunner(BaseRunner):
             output_directory,
             command_template,
             omit_output_path,
+            fresh
         )
         self.max_cores = max_cores
         self.failed = 0
@@ -244,6 +250,7 @@ class SBatchRunner(BaseRunner):
         time_limit,
         use_test_partition=False,
         omit_output_path=False,
+        fresh=False
     ):
         BaseRunner.__init__(
             self,
@@ -254,6 +261,7 @@ class SBatchRunner(BaseRunner):
             output_directory,
             command_template,
             omit_output_path,
+            fresh
         )
         self.job_output_directory = (
             Path(job_output_directory)
@@ -388,6 +396,7 @@ class SuperMUCRunner(SBatchRunner):
         time_limit,
         use_test_partition=False,
         omit_output_path=False,
+        fresh=False
     ):
         SBatchRunner.__init__(
             self,
@@ -403,6 +412,7 @@ class SuperMUCRunner(SBatchRunner):
             time_limit,
             use_test_partition,
             omit_output_path,
+            fresh
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 48
 
@@ -442,6 +452,7 @@ class HorekaRunner(SBatchRunner):
         time_limit,
         use_test_partition=False,
         omit_output_path=False,
+        fresh=False,
     ):
         SBatchRunner.__init__(
             self,
@@ -457,6 +468,7 @@ class HorekaRunner(SBatchRunner):
             time_limit,
             use_test_partition,
             omit_output_path,
+            fresh
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 76
 
@@ -495,6 +507,7 @@ class GenericDistributedMemoryRunner(SBatchRunner):
         time_limit,
         use_test_partition=False,
         omit_output_path=False,
+        fresh=False,
     ):
         SBatchRunner.__init__(
             self,
@@ -510,6 +523,7 @@ class GenericDistributedMemoryRunner(SBatchRunner):
             time_limit,
             use_test_partition,
             omit_output_path,
+            fresh
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 1
 
@@ -531,6 +545,7 @@ def get_runner(args, suite):
             args.output_dir,
             args.command_template,
             args.omit_output_path,
+            args.fresh,
         )
         return runner
 
@@ -549,6 +564,7 @@ def get_runner(args, suite):
             args.time_limit,
             args.test,
             args.omit_output_path,
+            args.fresh,
         )
     elif args.machine in "horeka":
         return HorekaRunner(
@@ -565,6 +581,7 @@ def get_runner(args, suite):
             args.time_limit,
             args.test,
             args.omit_output_path,
+            args.fresh,
         )
     elif args.machine == "generic-job-file":
         return GenericDistributedMemoryRunner(
@@ -581,6 +598,7 @@ def get_runner(args, suite):
             args.time_limit,
             args.test,
             args.omit_output_path,
+            args.fresh
         )
     else:
         exit("Unknown machine type: " + args.machine)

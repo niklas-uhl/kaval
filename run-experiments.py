@@ -107,6 +107,12 @@ def main():
         help="Do not pass specific json output path parameter to the executable",
     )
 
+    parser.add_argument(
+        "--fresh",
+        action="store_true",
+        help="Cleans the experiment data directory before starting the experiment"
+    )
+
     args = parser.parse_args()
     suites = load_suites(args.suite_files, args.search_dirs)
 
