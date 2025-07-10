@@ -39,6 +39,7 @@ class BaseRunner:
         output_directory,
         command_template,
         omit_json_output_path=False,
+        omit_seed=False,
     ):
         # append experiment_data_dir with current date
         data_suffix = date.today().strftime("%y_%m_%d")
@@ -57,6 +58,7 @@ class BaseRunner:
             command_template = self.default_command_template()
         self.command_template = command_template
         self.omit_json_output_path = omit_json_output_path
+        self.omit_seed = omit_seed
         self.tasks_per_node = None
 
     def make_cmd_for_config(
@@ -76,7 +78,8 @@ class BaseRunner:
         config = config.copy()
         if not self.omit_json_output_path:
             config["json_output_path"] = str(json_output_prefix_path)
-        config["seed"] = seed
+        if not self.omit_seed:
+            config["seed"] = seed
         cmd = expcore.command(
             suite.executable,
             ".",
@@ -109,9 +112,10 @@ class SharedMemoryRunner(BaseRunner):
         experiment_data_directory,
         output_directory,
         command_template,
-        omit_json_output_path
+        omit_json_output_path,
+        omit_seed
     ):
-        BaseRunner.__init__(self, suite_name, experiment_data_directory, "shared", output_directory, command_template, omit_json_output_path)
+        BaseRunner.__init__(self, suite_name, experiment_data_directory, "shared", output_directory, command_template, omit_json_output_path, omit_seed)
         self.max_cores = max_cores
         self.failed = 0
         self.total_jobs = 0
@@ -195,6 +199,7 @@ class SBatchRunner(BaseRunner):
         time_limit,
         use_test_partition=False,
         omit_json_output_path=False,
+        omit_seed=False,
     ):
         BaseRunner.__init__(
             self,
@@ -203,7 +208,8 @@ class SBatchRunner(BaseRunner):
             machine,
             output_directory,
             command_template,
-            omit_json_output_path
+            omit_json_output_path,
+            omit_seed
         )
         self.job_output_directory = (
             Path(job_output_directory)
@@ -262,7 +268,7 @@ class SBatchRunner(BaseRunner):
                 subs["islands"] = self.required_islands(nodes)
                 subs["account"] = project
                 if self.module_config:
-                    module_setup = f"module restore {self.module_config}"
+                    module_setup = f"{self.module_config}"
                     subs["module_setup"] = module_setup
                 else:
                     subs["module_setup"] = "# no specific module setup given"
@@ -343,6 +349,7 @@ class SuperMUCRunner(SBatchRunner):
         time_limit,
         use_test_partition=False,
         omit_json_output_path=False,
+        omit_seed=False,
     ):
         SBatchRunner.__init__(
             self,
@@ -357,6 +364,7 @@ class SuperMUCRunner(SBatchRunner):
             time_limit,
             use_test_partition,
             omit_json_output_path,
+            omit_seed
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 48
 
@@ -395,6 +403,7 @@ class HorekaRunner(SBatchRunner):
         time_limit,
         use_test_partition=False,
         omit_json_output_path=False,
+        omit_seed=False
     ):
         SBatchRunner.__init__(
             self,
@@ -409,6 +418,7 @@ class HorekaRunner(SBatchRunner):
             time_limit,
             use_test_partition,
             omit_json_output_path,
+            omit_seed,
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 76
 
@@ -446,6 +456,7 @@ class GenericDistributedMemoryRunner(SBatchRunner):
         time_limit,
         use_test_partition=False,
         omit_json_output_path=False,
+        omit_seed=False,
     ):
         SBatchRunner.__init__(
             self,
@@ -460,6 +471,7 @@ class GenericDistributedMemoryRunner(SBatchRunner):
             time_limit,
             use_test_partition,
             omit_json_output_path,
+            omit_seed,
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 1
 
@@ -480,6 +492,7 @@ def get_runner(args, suite):
             args.output_dir,
             args.command_template,
             args.omit_json_output_path,
+            args.omit_seed,
         )
         return runner
 
@@ -497,6 +510,7 @@ def get_runner(args, suite):
             args.time_limit,
             args.test,
             args.omit_json_output_path,
+            args.omit_seed,
         )
     elif args.machine in "horeka":
         return HorekaRunner(
@@ -512,6 +526,7 @@ def get_runner(args, suite):
             args.time_limit,
             args.test,
             args.omit_json_output_path,
+            args.omit_seed,
         )
     elif args.machine == "generic-job-file":
         return GenericDistributedMemoryRunner(
@@ -527,6 +542,7 @@ def get_runner(args, suite):
             args.time_limit,
             args.test,
             args.omit_json_output_path,
+            args.omit_seed,
         )
     else:
         exit("Unknown machine type: " + args.machine)

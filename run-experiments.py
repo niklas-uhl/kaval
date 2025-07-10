@@ -109,6 +109,12 @@ def main():
         help="Do not pass specific json output path parameter to the executable",
     )
 
+    parser.add_argument(
+        "--omit-seed",
+        action="store_true",
+        help="Do not pass seed as parameter to the executable",
+    )
+
     args = parser.parse_args()
     suites = load_suites(args.suite_files, args.search_dirs)
 
