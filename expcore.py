@@ -201,7 +201,7 @@ class ExperimentSuite:
         configs=[],
         tasks_per_node=None,
         time_limit=None,
-        seeds = None,
+        seeds = [0],
         input_time_limit={},
     ):
         self.name = name
