@@ -204,6 +204,7 @@ class SBatchRunner(BaseRunner):
         sbatch_template,
         command_template,
         module_config,
+        module_restore_cmd,
         time_limit,
         use_test_partition=False,
         omit_json_output_path=False,
@@ -227,6 +228,7 @@ class SBatchRunner(BaseRunner):
         self.job_output_directory.mkdir(exist_ok=True, parents=True)
 
         self.module_config = module_config
+        self.module_restore_cmd = module_restore_cmd
         self.time_limit = time_limit
         self.use_test_partition = use_test_partition
         if not sbatch_template:
@@ -276,8 +278,7 @@ class SBatchRunner(BaseRunner):
                 subs["islands"] = self.required_islands(nodes)
                 subs["account"] = project
                 if self.module_config:
-                    module_setup = f"{self.module_config}"
-                    subs["module_setup"] = module_setup
+                    subs["module_setup"] = f"{self.module_restore_cmd} {self.module_config}"
                 else:
                     subs["module_setup"] = "# no specific module setup given"
                 time_limit = 0
@@ -353,6 +354,7 @@ class SuperMUCRunner(SBatchRunner):
         sbatch_template,
         command_template,
         module_config,
+        module_restore_cmd,
         tasks_per_node,
         time_limit,
         use_test_partition=False,
@@ -369,6 +371,7 @@ class SuperMUCRunner(SBatchRunner):
             sbatch_template,
             command_template,
             module_config,
+            module_restore_cmd,
             time_limit,
             use_test_partition,
             omit_json_output_path,
@@ -407,6 +410,7 @@ class HorekaRunner(SBatchRunner):
         sbatch_template,
         command_template,
         module_config,
+        module_restore_cmd,
         tasks_per_node,
         time_limit,
         use_test_partition=False,
@@ -423,6 +427,7 @@ class HorekaRunner(SBatchRunner):
             sbatch_template,
             command_template,
             module_config,
+            module_restore_cmd,
             time_limit,
             use_test_partition,
             omit_json_output_path,
@@ -460,6 +465,7 @@ class GenericDistributedMemoryRunner(SBatchRunner):
         sbatch_template,
         command_template,
         module_config,
+        module_restore_cmd,
         tasks_per_node,
         time_limit,
         use_test_partition=False,
@@ -476,6 +482,7 @@ class GenericDistributedMemoryRunner(SBatchRunner):
             sbatch_template,
             command_template,
             module_config,
+            module_restore_cmd,
             time_limit,
             use_test_partition,
             omit_json_output_path,
@@ -514,6 +521,7 @@ def get_runner(args, suite):
             args.sbatch_template,
             args.command_template,
             args.module_config,
+            args.module_restore_cmd,
             args.tasks_per_node,
             args.time_limit,
             args.test,
@@ -530,6 +538,7 @@ def get_runner(args, suite):
             args.sbatch_template,
             args.command_template,
             args.module_config,
+            args.module_restore_cmd,
             args.tasks_per_node,
             args.time_limit,
             args.test,
@@ -546,6 +555,7 @@ def get_runner(args, suite):
             args.sbatch_template,
             args.command_template,
             args.module_config,
+            args.module_restore_cmd,
             args.tasks_per_node,
             args.time_limit,
             args.test,

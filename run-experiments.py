@@ -44,7 +44,7 @@ def load_suites(suite_files, search_paths):
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument(
         "suite",
@@ -78,7 +78,12 @@ def main():
     )
     parser.add_argument(
         "--module-config",
-        help="Name of module config which should be loaded before the job is executed.",
+        help="Name of module config which should be loaded before the job is executed using module load <config>.",
+    )
+    parser.add_argument(
+        "--module-restore-cmd",
+        default="module restore",
+        help="Provide a command to restore the module config.",
     )
 
     parser.add_argument("--list", action="store_true")
