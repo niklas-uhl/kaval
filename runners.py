@@ -29,6 +29,14 @@ from string import Template
 import time
 from datetime import date
 
+def format_duration(seconds):
+    days, remainder = divmod(seconds, 3600*24)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, seconds = divmod(remainder, 60)
+
+    formatted = f"{days}-{hours:02}:{minutes:02}:{seconds:02}"
+    return formatted
+
 
 class BaseRunner:
     def __init__(
@@ -308,7 +316,7 @@ class SBatchRunner(BaseRunner):
                             commands.append(cmd_string)
                 subs["commands"] = "\n".join(commands)
                 subs["time_string"] = time.strftime(
-                    "%H:%M:%S", time.gmtime(time_limit * 60)
+                    format_duration(seconds=time_limit * 60)
                 )
                 job_script = template.substitute(subs)
                 job_file = self.job_output_directory / aggregate_jobname
