@@ -149,7 +149,7 @@ class SharedMemoryRunner(BaseRunner):
                             else:
                                 input_name = str(input)
                             jobname = f"{input_name}-np{mpi_ranks}-t{threads}"
-                            config_job_name = jobname + "-c" + str(i)
+                            config_job_name = jobname + "-c" + str(i) + "-s" + str(seed)
                             json_output_prefix_path = (
                                 self.output_directory / f"{config_job_name}_timer.json"
                             )
