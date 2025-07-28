@@ -172,9 +172,10 @@ class DummyInstance(InputGraph):
     def args(self, mpi_rank, treeads_per_rank, escape):
         params = []
         for key, value in self.params.items():
-            params.append(f"--{key}")
+            if key != "nokey":
+                params.append(f"--{key}")
             if not isinstance(value, bool):
-                params.append(f"{value}")
+                params.append(f"\"{value}\"")
         return params
 
     @property
