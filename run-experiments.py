@@ -99,9 +99,7 @@ def main():
     parser.add_argument(
         "--tasks-per-node", default=os.environ.get("TASKS_PER_NODE", None), type=int
     )
-    parser.add_argument(
-        "--max-cores", default=sys.maxsize, type=int
-    )
+    parser.add_argument("--max-cores", default=sys.maxsize, type=int)
     parser.add_argument(
         "-t", "--time-limit", default=os.environ.get("TIME_LIMIT", 20), type=int
     )
@@ -109,7 +107,7 @@ def main():
     parser.add_argument("--test", action="store_true")
 
     parser.add_argument(
-        "--omit-json-output-path",
+        "--omit-output-path",
         action="store_true",
         help="Do not pass specific json output path parameter to the executable",
     )
@@ -118,6 +116,12 @@ def main():
         "--omit-seed",
         action="store_true",
         help="Do not pass seed as parameter to the executable",
+    )
+    
+    parser.add_argument(
+        "--fresh",
+        action="store_true",
+        help="Cleans the experiment data directory before starting the experiment"
     )
 
     args = parser.parse_args()
@@ -139,6 +143,7 @@ def main():
         if suite:
             runner = get_runner(args, suite)
             runner.execute(suite)
-   
+
+
 if __name__ == "__main__":
     main()

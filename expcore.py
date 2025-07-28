@@ -43,6 +43,10 @@ class InputGraph:
     def name(self):
         return self._name
 
+    @property
+    def short_name(self):
+        return self.name
+
 
 class FileInputGraph(InputGraph):
     def __init__(self, name, path, format="metis"):
@@ -94,20 +98,35 @@ class FileInputGraph(InputGraph):
         return f"FileInputGraph({self.name, self.path, self.format, self.partitioned, self.partitions})"
 
 
+def stringify_params(params):
+    param_strings = []
+    for key, value in params.items():
+        if isinstance(value, bool):
+            param_strings.append(key)
+        else:
+            param_strings.append(f"{key}={value}")
+    return param_strings
+
+
 class KaGenGraph(InputGraph):
 
     def __init__(self, **kwargs):
         kwargs = kwargs.copy()
-        if not "type" in kwargs:
+        try:
+            self.type = kwargs.get("type")
+        except KeyError:
             raise ValueError("KaGen graph requires a type")
         try:
             self.n = kwargs.get("n", 1 << int(kwargs["N"]))
-        except TypeError:
+        except (TypeError, KeyError):
             self.n = None
         try:
             self.m = kwargs.get("m", 1 << int(kwargs["M"]))
-        except TypeError:
+        except (TypeError, KeyError):
             self.m = None
+        self.edgeweights_generator = kwargs.get("edgeweights_generator")
+        self.edgeweights_range_begin = kwargs.get("edgeweights_range_begin")
+        self.edgeweights_range_end = kwargs.get("edgeweights_range_end")
         kwargs.pop("n", None)
         kwargs.pop("N", None)
         kwargs.pop("m", None)
@@ -128,26 +147,44 @@ class KaGenGraph(InputGraph):
         else:
             return self.m
 
+    def preprocess_file_based_graphs_params(self, mpi_ranks):
+        params = self.params.copy()
+        if params.get("type") not in ["partitioned_file", "partitioned-file"]:
+            return params
+        try:
+            filename = params.get("filename")
+        except KeyError:
+            raise ValueError(
+                "A partitioned file input graph requires a filename paramerter."
+            )
+        path, graph_format = filename.rsplit(".", 1)
+        extended_filename = f"{path}_{mpi_ranks}.{graph_format}"
+        params["type"] = (
+            "file"  # to date KaGen does not possess a special type for pre-partitioned graphs
+        )
+        params["filename"] = extended_filename
+        params["distribution"] = "explicit"
+        params["explicit-distribution"] = extended_filename + ".partitions"
+        return params
+
     def args(self, mpi_ranks, threads_per_rank, escape):
         p = mpi_ranks * threads_per_rank
-        params = self.stringify_params()
+        params = self.preprocess_file_based_graphs_params(mpi_ranks)
+        params = stringify_params(params)
         if self.n:
             params.append(f"n={self.get_n(p)}")
         if self.m:
             params.append(f"m={self.get_m(p)}")
+        if self.edgeweights_generator:
+            params.append(f"edgeweights_generator={self.edgeweights_generator}")
+        if self.edgeweights_range_begin:
+            params.append(f"edgeweights_range_begin={self.edgeweights_range_begin}")
+        if self.edgeweights_range_end:
+            params.append(f"edgeweights_range_end={self.edgeweights_range_end}")
         kagen_option_string = ";".join(params)
         if escape:
             kagen_option_string = '"{}"'.format(kagen_option_string)
         return ["--kagen_option_string", kagen_option_string]
-
-    def stringify_params(self):
-        param_strings = []
-        for key, value in self.params.items():
-            if isinstance(value, bool):
-                param_strings.append(key)
-            else:
-                param_strings.append(f"{key}={value}")
-        return param_strings
 
     @property
     def name(self):
@@ -156,10 +193,17 @@ class KaGenGraph(InputGraph):
             params.append(f"n={int(math.log2(self.n))}")
         if self.m:
             params.append(f"m={int(math.log2(self.m))}")
-        params += self.stringify_params()
+        params += stringify_params(self.params)
         if self.scale_weak:
             params.append("weak")
         name = f"KaGen_{'_'.join(params)}"
+        return slugify.slugify(name)
+
+    @property
+    def short_name(self):
+        name = f"{self.params['type']}"
+        if self.n:
+            name += f"_n={int(math.log2(self.n))}"
         return slugify.slugify(name)
 
 
@@ -168,14 +212,44 @@ class DummyInstance(InputGraph):
         self.name_ = kwargs["name"]
         self.params = kwargs.copy()
         self.params.pop("name", None)
+        self.parse_scale_weak_params(self.params)
+        self.params.pop("scale_weak", None)
 
-    def args(self, mpi_rank, treeads_per_rank, escape):
+    def parse_scale_weak_params(self, kwargs):
+        scale_weak_params = kwargs.get("scale_weak")
+        if scale_weak_params is None:
+            self.scale_weak_params = []
+        else:
+            if not isinstance(scale_weak_params, list):
+                scale_weak = [scale_weak_params]
+            self.scale_weak_params = scale_weak_params
+
+    def get_scaled_value(self, parameter, value, p):
+        if self.do_scale_parameter(parameter):
+            if not isinstance(value, int):
+                raise ValueError(
+                    f"Weak scaling parameter '{parameter}' has a non-integer value of '{value}'."
+                )
+            return int(value) * p
+        else:
+            return int(value)
+
+    def do_scale_parameter(self, parameter):
+        return parameter in self.scale_weak_params
+
+    def args(self, mpi_ranks, threads_per_rank, escape):
+        p = mpi_ranks * threads_per_rank
         params = []
         for key, value in self.params.items():
-            if key != "nokey":
-                params.append(f"--{key}")
-            if not isinstance(value, bool):
+
+            if key == "nokey" and not isinstance(value, bool):
                 params.append(f"\"{value}\"")
+            elif self.do_scale_parameter(key):
+                params.append(f"--{key} {self.get_scaled_value(key, value, p)}")
+            else:
+                params.append(f"--{key}")
+                if not isinstance(value, bool):
+                    params.append(f"\"{value}\"")
         return params
 
     @property
@@ -195,6 +269,7 @@ class ExperimentSuite:
         self,
         name: str,
         executable: None,
+        output_path_option_name,
         cores=[],
         threads_per_rank=[1],
         inputs=[],
@@ -206,6 +281,7 @@ class ExperimentSuite:
     ):
         self.name = name
         self.executable = executable
+        self.output_path_option_name = output_path_option_name
         self.cores = cores
         self.threads_per_rank = threads_per_rank
         self.inputs = inputs
@@ -285,9 +361,14 @@ def load_suite_from_yaml(path):
         executable = data["executable"]
     else:
         executable = None
+    if "output_path_option_name" in data:
+        output_path_option_name = data["output_path_option_name"]
+    else:
+        output_path_option_name = "json_output_path"
     return ExperimentSuite(
         data["name"],
         executable,
+        output_path_option_name,
         data["ncores"],
         data.get("threads_per_rank", [1]),
         inputs,
