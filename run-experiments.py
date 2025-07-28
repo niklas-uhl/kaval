@@ -113,12 +113,6 @@ def main():
     )
 
     parser.add_argument(
-        "--omit-seed",
-        action="store_true",
-        help="Do not pass seed as parameter to the executable",
-    )
-    
-    parser.add_argument(
         "--fresh",
         action="store_true",
         help="Cleans the experiment data directory before starting the experiment"

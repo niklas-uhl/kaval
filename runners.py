@@ -283,7 +283,7 @@ class SBatchRunner(BaseRunner):
             output_directory,
             command_template,
             omit_output_path,
-            omit_seed
+            omit_seed,
             fresh
         )
         self.job_output_directory = (
@@ -440,7 +440,7 @@ class SuperMUCRunner(SBatchRunner):
             time_limit,
             use_test_partition,
             omit_output_path,
-            omit_seed
+            omit_seed,
             fresh
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 48
@@ -482,7 +482,7 @@ class HorekaRunner(SBatchRunner):
         time_limit,
         use_test_partition=False,
         omit_output_path=False,
-        omit_seed=False
+        omit_seed=False,
         fresh=False,
     ):
         SBatchRunner.__init__(
@@ -501,7 +501,6 @@ class HorekaRunner(SBatchRunner):
             use_test_partition,
             omit_output_path,
             omit_seed,
-            omit_output_path,
             fresh
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 76
@@ -543,6 +542,7 @@ class GenericDistributedMemoryRunner(SBatchRunner):
         use_test_partition=False,
         omit_output_path=False,
         omit_seed=False,
+        fresh=False
     ):
         SBatchRunner.__init__(
             self,
@@ -560,7 +560,6 @@ class GenericDistributedMemoryRunner(SBatchRunner):
             use_test_partition,
             omit_output_path,
             omit_seed,
-            omit_output_path,
             fresh
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 1
@@ -583,7 +582,7 @@ def get_runner(args, suite):
             args.output_dir,
             args.command_template,
             args.omit_output_path,
-            args.omit_seed,
+            suite.omit_seed,
             args.fresh,
         )
         return runner
@@ -604,8 +603,7 @@ def get_runner(args, suite):
             args.time_limit,
             args.test,
             args.omit_output_path,
-            args.omit_seed,
-            args.omit_output_path,
+            suite.omit_seed,
             args.fresh,
         )
     elif args.machine in "horeka":
@@ -624,8 +622,7 @@ def get_runner(args, suite):
             args.time_limit,
             args.test,
             args.omit_output_path,
-            args.omit_seed,
-            args.omit_output_path,
+            suite.omit_seed,
             args.fresh,
         )
     elif args.machine == "generic-job-file":
@@ -644,7 +641,7 @@ def get_runner(args, suite):
             args.time_limit,
             args.test,
             args.omit_output_path,
-            args.omit_seed,
+            suite.omit_seed,
             args.fresh
         )
     else:
