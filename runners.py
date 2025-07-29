@@ -135,8 +135,8 @@ class BaseRunner:
                 config += f"-t{threads}"
             if iconfig is not None:
                 config += f"-c{iconfig}"
-        if seed:
-          config+= f"-s{seed}"
+            if seed is not None:
+                config += f"-s{seed}"
         return config
 
     def jobname(
@@ -202,7 +202,7 @@ class SharedMemoryRunner(BaseRunner):
                             mpi_ranks = ncores // threads
 
                             config_job_name = self.config_name(
-                                iinput, input, mpi_ranks, threads, i, seed
+                                iinput, input, mpi_ranks, threads, i, seed=seed
                             )
                             json_output_prefix_path = (
                                 self.output_directory / f"{config_job_name}_timer.json"
@@ -355,7 +355,7 @@ class SBatchRunner(BaseRunner):
                                 job_time_limit = self.time_limit
                             time_limit += job_time_limit
                             config_jobname = self.jobname(
-                                iinput, input, mpi_ranks, threads_per_rank, i, seed
+                                iinput, input, mpi_ranks, threads_per_rank, i, seed=seed
                             )
                             # config_jobname = jobname + "-c" + str(i)
                             cmd = self.make_cmd_for_config(

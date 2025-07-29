@@ -54,6 +54,9 @@ def get_argument_type_from_str(arg_type:str) -> CLIArgumentType:
 def is_argument_flag_only(arg_type, arg_value):
     return arg_type == CLIArgumentType.FLAG and isinstance(arg_value, bool)
 
+def is_argument_positional(arg_type):
+    return arg_type in [CLIArgumentType.POSITIONAL, CLIArgumentType.POSITIONAL_LIST]
+
 def for_each_argument(args, handler):
     for key, value in args.items():
         argument_type = CLIArgumentType.FLAG # default
@@ -278,7 +281,7 @@ class DummyInstance(InputGraph):
         def parse_argument(arg_type, arg_key, arg_value):
             param = ""
  
-            if not is_argument_flag_only(arg_type, arg_value) or not arg_value:
+            if not is_argument_positional(arg_type) and (not is_argument_flag_only(arg_type, arg_value) or arg_value):
                 param += "-"
                 if len(arg_key) > 1:
                     param += "-"
@@ -317,7 +320,7 @@ class DummyInstance(InputGraph):
         def parse_argument(arg_type, arg_key, arg_value):
             param = ""
 
-            if not is_argument_flag_only(arg_type, arg_value) or not arg_value:
+            if not is_argument_positional(arg_type) and (not is_argument_flag_only(arg_type, arg_value) or arg_value):
                 param += f"{arg_key}"
 
             if arg_type != CLIArgumentType.FLAG or not isinstance(arg_value, bool):
@@ -501,7 +504,10 @@ def explode(config):
             argument_value = value["value"]
             if is_argument_explosive(argument_type, argument_value):
                 for arg in argument_value:
-                    exploded = config.copy()
+                    if isinstance(arg, list):
+                        exploded = copy.deepcopy(config)
+                    else:
+                        exploded = config.copy()
                     exploded[flag]["value"] = arg
                     exp = explode(exploded)
                     configs = configs + exp
@@ -516,8 +522,7 @@ def explode(config):
             break
     if not configs:
         return [config]
-
-    print(configs)
+    
     return configs
 
 
@@ -526,7 +531,7 @@ def params_to_args(params):
     def parse_argument(arg_type, arg_key, arg_value):
         arg = ""
 
-        if not is_argument_flag_only(arg_type, arg_value) or not arg_value:
+        if not is_argument_positional(arg_type) and (not is_argument_flag_only(arg_type, arg_value) or arg_value):
             arg += "-"
             if len(arg_key) > 1:
                 arg += "-"
