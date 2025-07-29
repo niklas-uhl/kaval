@@ -30,7 +30,39 @@ import sys
 import math
 import slugify
 import copy
+from enum import Enum
 
+class CLIArgumentType(Enum):
+    FLAG="flag",
+    POSITIONAL="positional"
+    POSITIONAL_LIST="positional_list"
+    FLAG_LIST="positional_list"
+
+def get_argument_type_from_str(arg_type:str) -> CLIArgumentType:
+    if arg_type == "flag":
+        return CLIArgumentType.FLAG
+    elif arg_type == "positional":
+        return CLIArgumentType.POSITIONAL
+    elif arg_type == "positional_list":
+        return CLIArgumentType.POSITIONAL_LIST
+    elif arg_type == "flag_list":
+        return CLIArgumentType.FLAG_LIST
+    else:
+        print("Found undefined argument type %s." % arg_type)
+        sys.exit(1)
+
+def is_argument_flag_only(arg_type, arg_value):
+    return arg_type == CLIArgumentType.FLAG and isinstance(arg_value, bool)
+
+def for_each_argument(args, handler):
+    for key, value in args.items():
+        argument_type = CLIArgumentType.FLAG # default
+
+        if isinstance(value, dict):
+            argument_type = get_argument_type_from_str(value["type"])
+            value = value["value"] # flatten param
+
+        handler(argument_type, key, value)
 
 class InputGraph:
     def __init__(self, name):
@@ -207,6 +239,7 @@ class KaGenGraph(InputGraph):
         return slugify.slugify(name)
 
 
+
 class DummyInstance(InputGraph):
     def __init__(self, **kwargs):
         self.name_ = kwargs["name"]
@@ -221,7 +254,7 @@ class DummyInstance(InputGraph):
             self.scale_weak_params = []
         else:
             if not isinstance(scale_weak_params, list):
-                scale_weak = [scale_weak_params]
+                scale_weak_params = [scale_weak_params]
             self.scale_weak_params = scale_weak_params
 
     def get_scaled_value(self, parameter, value, p):
@@ -237,32 +270,70 @@ class DummyInstance(InputGraph):
     def do_scale_parameter(self, parameter):
         return parameter in self.scale_weak_params
 
+
     def args(self, mpi_ranks, threads_per_rank, escape):
         p = mpi_ranks * threads_per_rank
         params = []
-        for key, value in self.params.items():
 
-            if key == "nokey" and not isinstance(value, bool):
-                params.append(f"\"{value}\"")
-            elif self.do_scale_parameter(key):
-                params.append(f"--{key} {self.get_scaled_value(key, value, p)}")
-            else:
-                params.append(f"--{key}")
-                if not isinstance(value, bool):
-                    params.append(f"\"{value}\"")
+        def parse_argument(arg_type, arg_key, arg_value):
+            param = ""
+ 
+            if not is_argument_flag_only(arg_type, arg_value) or not arg_value:
+                param += "-"
+                if len(arg_key) > 1:
+                    param += "-"
+                param += f"{arg_key}"
+
+            if not is_argument_flag_only(arg_type, arg_value):
+                if not isinstance(arg_value, list):
+                    arg_value = [arg_value] # pack arg_value
+
+                if self.do_scale_parameter(arg_key):
+                    param += " " + " ".join([f"\"{self.get_scaled_arg_value(arg_key, val, p)}\"" for val in arg_value])
+                else:
+                    param += " " + " ".join([f"\"{val}\"" for val in arg_value])
+
+            if param:
+                params.append(param)
+
+        for_each_argument(self.params, parse_argument)
         return params
 
     @property
     def name(self):
         param_strings = []
         for key, value in self.params.items():
+            if isinstance(value, dict):
+                argument_type = get_argument_type_from_str(value["type"])
+                value = value["value"] # flatten param
+
+
             if isinstance(value, bool):
                 param_strings.append(key)
             else:
                 param_strings.append(f"{key}={value}")
+
+
+        def parse_argument(arg_type, arg_key, arg_value):
+            param = ""
+
+            if not is_argument_flag_only(arg_type, arg_value) or not arg_value:
+                param += f"{arg_key}"
+
+            if arg_type != CLIArgumentType.FLAG or not isinstance(arg_value, bool):
+                # pack arg_value
+                if not isinstance(arg_value, list):
+                    arg_value = [arg_value] # pack arg_value
+
+                # add arg_value to param
+                param += "=" + ",".join([f"\"{val}\"" for val in arg_value])
+
+            if param:
+                param_strings.append(param)
+
+        for_each_argument(self.params, parse_argument)
         name = self.name_ + "_" + "_".join(param_strings)
         return slugify.slugify(name)
-
 
 class ExperimentSuite:
     def __init__(
@@ -277,7 +348,7 @@ class ExperimentSuite:
         tasks_per_node=None,
         time_limit=None,
         seeds = [0],
-        omit_seeds = True,
+        omit_seed = True,
         input_time_limit={},
     ):
         self.name = name
@@ -290,7 +361,7 @@ class ExperimentSuite:
         self.tasks_per_node = tasks_per_node
         self.time_limit = time_limit
         self.seeds = seeds
-        self.omit_seeds = omit_seeds
+        self.omit_seed = omit_seed
         self.input_time_limit = input_time_limit
 
     def set_input_time_limit(self, input_name, time_limit):
@@ -349,7 +420,7 @@ def load_suite_from_yaml(path):
                 if generator == "kagen":
                     inputs.extend([KaGenGraph(**graph_variant) for graph_variant in explode(graph)])
                 elif generator == "dummy":
-                    inputs.append(DummyInstance(**graph))
+                    inputs.extend([DummyInstance(**graph_variant) for graph_variant in explode(graph)])
                 else:
                     raise ValueError(
                         f"'{generator}' is an unsupported argument for a graph generator. Use ['kagen', 'dummy'] instead."
@@ -367,6 +438,7 @@ def load_suite_from_yaml(path):
         output_path_option_name = data["output_path_option_name"]
     else:
         output_path_option_name = "json_output_path"
+
     return ExperimentSuite(
         data["name"],
         executable,
@@ -378,15 +450,64 @@ def load_suite_from_yaml(path):
         tasks_per_node=data.get("tasks_per_node"),
         time_limit=data.get("time_limit"),
         seeds=data.get("seeds", [0]),
-        omit_seeds=data.get("omit_seeds", True),
+        omit_seed=data.get("omit_seed", True),
         input_time_limit=time_limits,
     )
+
+
+def is_argument_explosive(arg_type, arg_val):
+    if arg_type in [CLIArgumentType.FLAG_LIST, CLIArgumentType.POSITIONAL_LIST] and is_list_of_list(arg_val):
+        # a suite.yaml snippet
+        # BEGIN YAML
+        # key:
+        #   - type: "positional_list"
+        #     value: [[1, 2], [2, 3], [3, 4]]
+        # END YAML
+        # 
+        # should result in three configurations: 
+        # ["\"1\" \"2\"", "\"2\" \"3\"", "\"3\" \"4\""] 
+        return True
+    elif arg_type in [CLIArgumentType.FLAG, CLIArgumentType.POSITIONAL] and isinstance(arg_val, list):
+        # a suite.yaml snippet
+        # BEGIN YAML
+        # key:
+        #   - type: "flag"
+        #     value: [1, 2, 3]
+        # END YAML
+        # 
+        # should result in three configurations: 
+        # ["--key \"1\"", "--key \"2\"", "--key \"3\"] 
+        return True
+    else:
+        return False
+
+
+def is_list_of_list(val):
+    if not isinstance(val, list):
+        return False
+    for x in val:
+        if not isinstance(x, list):
+            return False
+    return True
 
 
 def explode(config):
     configs = []
     for flag, value in config.items():
-        if type(value) == list:
+        if isinstance(value, dict):
+            assert "value" in value and "type" in value
+
+            argument_type = get_argument_type_from_str(value["type"])
+            argument_value = value["value"]
+            if is_argument_explosive(argument_type, argument_value):
+                for arg in argument_value:
+                    exploded = config.copy()
+                    exploded[flag]["value"] = arg
+                    exp = explode(exploded)
+                    configs = configs + exp
+                break
+
+        elif isinstance(value, list):
             for arg in value:
                 exploded = config.copy()
                 exploded[flag] = arg
@@ -395,22 +516,33 @@ def explode(config):
             break
     if not configs:
         return [config]
+
+    print(configs)
     return configs
 
 
-def params_to_flags(params):
-    flags = []
-    for flag, value in params.items():
-        dash = "-"
-        if len(flag) > 1:
-            dash += "-"
-        if isinstance(value, bool):
-            if value:
-                flags.append(dash + flag)
-        else:
-            flags.append(dash + flag)
-            flags.append(str(value))
-    return flags
+def params_to_args(params):
+    args = []
+    def parse_argument(arg_type, arg_key, arg_value):
+        arg = ""
+
+        if not is_argument_flag_only(arg_type, arg_value) or not arg_value:
+            arg += "-"
+            if len(arg_key) > 1:
+                arg += "-"
+            arg += f"{arg_key}"
+
+        if not is_argument_flag_only(arg_type, arg_value):
+            if not isinstance(arg_value, list):
+                arg_value = [arg_value] # pack arg_value
+
+            arg += " " + " ".join([f"\"{val}\"" for val in arg_value])
+
+        if arg:
+            args.append(arg)
+
+    for_each_argument(params, parse_argument)
+    return args
 
 
 def command(
@@ -428,6 +560,6 @@ def command(
         else:
             command.append(str(input))
     flags = []
-    flags = flags + params_to_flags(kwargs)
+    flags = flags + params_to_args(kwargs)
     command = command + flags
     return command

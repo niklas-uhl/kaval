@@ -344,7 +344,7 @@ class SBatchRunner(BaseRunner):
                 for threads_per_rank in experiment_suite.threads_per_rank:
                     mpi_ranks = ncores // threads_per_rank
                     ranks_per_node = tasks_per_node // threads_per_rank
-                    jobname = self.jobname(iinput, input, mpi_ranks, threads_per_rank)
+                    # jobname = self.jobname(iinput, input, mpi_ranks, threads_per_rank)
                     # jobname = f"{input_name}-np{mpi_ranks}-t{threads_per_rank}"
                     for i, config in enumerate(experiment_suite.configs):
                         for seed in experiment_suite.seeds:
@@ -365,7 +365,7 @@ class SBatchRunner(BaseRunner):
                                 i,
                                 mpi_ranks,
                                 threads_per_rank,
-                                seed
+                                seed,
                                 config,
                             )
                             cmd_string = command_template.substitute(

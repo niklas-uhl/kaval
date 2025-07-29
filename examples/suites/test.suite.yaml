@@ -1,0 +1,22 @@
+name: test
+executable: /build/test_app
+ncores: [1, 64]
+time_limit: 61 # minutes
+seeds: [0, 1] # default: [0]
+omit_seeds: True # seeds is not passed as an arugment (seed acts as iteration)
+threads_per_rank: [1]
+graphs:
+  - generator: dummy
+    name: my_graph
+    graph:
+      type: positional
+      value: /path/to/my/graph # positional argument (key is not used)
+    queries:
+      type: flag_list
+      value: [[1, 2, 3, 4, 5, 6, 7, 8], [10, 9, 8, 7]] # 2x configurations: --queries 1 2 3 4 ..., --queries 10 9 8 ...
+config:
+  - timelimit: 60
+    variant: ["bfs1", "bfs2"] # is interpreted as flag; 2x configurations: --variant "bfs1", --variant "bfs2"
+    strategy_and_threshold:
+      type: positional_list
+      value: [["local", 300], ["randomized", 150]] # results in 2x configuration: "local" 300, "global" 700
