@@ -3,7 +3,7 @@ executable: /build/test_app
 ncores: [1, 64]
 time_limit: 61 # minutes
 seeds: [0, 1] # default: [0]
-omit_seed: False # seeds is not passed as an arugment (seed acts as iteration)
+omit_seed: True # seed is not passed as an arugment (seed acts as iteration)
 threads_per_rank: [1]
 graphs:
   - generator: dummy
