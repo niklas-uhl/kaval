@@ -1,6 +1,6 @@
 echo "[LOG] Starting ${jobname}"
 start=$$(date +%s.%N)
-mpiexec.hydra -bootstrap slurm ${cmd}
+I_MPI_PIN=1 I_MPI_PIN_DOMAIN=core I_MPI_PIN_ORDER=compact I_MPI_JOB_TIMEOUT=${timeout} mpiexec.hydra -bootstrap slurm ${cmd}
 end=$$(date +%s.%N)
 diff=$$(echo "$$end - $$start" | bc)
 echo "[LOG] Finished ${jobname} in $${diff} seconds"
