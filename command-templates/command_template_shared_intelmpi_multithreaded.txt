@@ -1,0 +1,1 @@
+OMP_NUM_THREADS=${threads_per_rank} I_MPI_PIN_CELL=core I_MPI_PIN_DOMAIN=${threads_per_rank}:compact mpiexec -n ${mpi_ranks} ${cmd}

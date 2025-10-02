@@ -196,13 +196,13 @@ class SharedMemoryRunner(BaseRunner):
                 if ncores > self.max_cores:
                     continue
                 for seed in experiment_suite.seeds:
-                    for threads in experiment_suite.threads_per_rank:
+                    for threads_per_rank in experiment_suite.threads_per_rank:
                         for i, config in enumerate(experiment_suite.configs):
                             local_config = config.copy()
-                            mpi_ranks = ncores // threads
+                            mpi_ranks = ncores // threads_per_rank
 
                             config_job_name = self.config_name(
-                                iinput, input, mpi_ranks, threads, i, seed=seed
+                                iinput, input, mpi_ranks, threads_per_rank, i, seed=seed
                             )
                             json_output_prefix_path = (
                                 self.output_directory / f"{config_job_name}_timer.json"
@@ -219,15 +219,15 @@ class SharedMemoryRunner(BaseRunner):
                                 config_job_name,
                                 i,
                                 mpi_ranks,
-                                threads,
+                                threads_per_rank,
                                 seed,
                                 config,
                             )
                             cmd_string = command_template.substitute(
-                                cmd=" ".join(cmd), mpi_ranks=mpi_ranks
+                                cmd=" ".join(cmd), mpi_ranks=mpi_ranks, threads_per_rank=threads_per_rank,
                             )
                             print(
-                                f"Running config {i} on {input.name} using {mpi_ranks} ranks and {threads} threads per rank ... ",
+                                f"Running config {i} on {input.name} using {mpi_ranks} ranks and {threads_per_rank} threads per rank ... ",
                             )
                             print(cmd_string, end="")
                             sys.stdout.flush()
