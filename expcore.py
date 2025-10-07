@@ -20,25 +20,30 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from genericpath import isfile
-import subprocess
-import logging
-import os, re
-from pathlib import Path
-import yaml
-import sys
-import math
-import slugify
 import copy
+import logging
+import math
+import os
+import re
+import subprocess
+import sys
 from enum import Enum
+from genericpath import isfile
+from pathlib import Path
+
+import yaml
+
+import slugify
+
 
 class CLIArgumentType(Enum):
-    FLAG="flag",
-    POSITIONAL="positional"
-    POSITIONAL_LIST="positional_list"
-    FLAG_LIST="positional_list"
+    FLAG = ("flag",)
+    POSITIONAL = "positional"
+    POSITIONAL_LIST = "positional_list"
+    FLAG_LIST = "positional_list"
 
-def get_argument_type_from_str(arg_type:str) -> CLIArgumentType:
+
+def get_argument_type_from_str(arg_type: str) -> CLIArgumentType:
     if arg_type == "flag":
         return CLIArgumentType.FLAG
     elif arg_type == "positional":
@@ -51,21 +56,25 @@ def get_argument_type_from_str(arg_type:str) -> CLIArgumentType:
         print("Found undefined argument type %s." % arg_type)
         sys.exit(1)
 
+
 def is_argument_flag_only(arg_type, arg_value):
     return arg_type == CLIArgumentType.FLAG and isinstance(arg_value, bool)
+
 
 def is_argument_positional(arg_type):
     return arg_type in [CLIArgumentType.POSITIONAL, CLIArgumentType.POSITIONAL_LIST]
 
+
 def for_each_argument(args, handler):
     for key, value in args.items():
-        argument_type = CLIArgumentType.FLAG # default
+        argument_type = CLIArgumentType.FLAG  # default
 
         if isinstance(value, dict):
             argument_type = get_argument_type_from_str(value["type"])
-            value = value["value"] # flatten param
+            value = value["value"]  # flatten param
 
         handler(argument_type, key, value)
+
 
 class InputGraph:
     def __init__(self, name):
@@ -159,9 +168,6 @@ class KaGenGraph(InputGraph):
             self.m = kwargs.get("m", 1 << int(kwargs["M"]))
         except (TypeError, KeyError):
             self.m = None
-        self.edgeweights_generator = kwargs.get("edgeweights_generator")
-        self.edgeweights_range_begin = kwargs.get("edgeweights_range_begin")
-        self.edgeweights_range_end = kwargs.get("edgeweights_range_end")
         kwargs.pop("n", None)
         kwargs.pop("N", None)
         kwargs.pop("m", None)
@@ -210,12 +216,6 @@ class KaGenGraph(InputGraph):
             params.append(f"n={self.get_n(p)}")
         if self.m:
             params.append(f"m={self.get_m(p)}")
-        if self.edgeweights_generator:
-            params.append(f"edgeweights_generator={self.edgeweights_generator}")
-        if self.edgeweights_range_begin:
-            params.append(f"edgeweights_range_begin={self.edgeweights_range_begin}")
-        if self.edgeweights_range_end:
-            params.append(f"edgeweights_range_end={self.edgeweights_range_end}")
         kagen_option_string = ";".join(params)
         if escape:
             kagen_option_string = '"{}"'.format(kagen_option_string)
@@ -240,7 +240,6 @@ class KaGenGraph(InputGraph):
         if self.n:
             name += f"_n={int(math.log2(self.n))}"
         return slugify.slugify(name)
-
 
 
 class DummyInstance(InputGraph):
@@ -273,15 +272,16 @@ class DummyInstance(InputGraph):
     def do_scale_parameter(self, parameter):
         return parameter in self.scale_weak_params
 
-
     def args(self, mpi_ranks, threads_per_rank, escape):
         p = mpi_ranks * threads_per_rank
         params = []
 
         def parse_argument(arg_type, arg_key, arg_value):
             param = ""
- 
-            if not is_argument_positional(arg_type) and (not is_argument_flag_only(arg_type, arg_value) or arg_value):
+
+            if not is_argument_positional(arg_type) and (
+                not is_argument_flag_only(arg_type, arg_value) or arg_value
+            ):
                 param += "-"
                 if len(arg_key) > 1:
                     param += "-"
@@ -289,12 +289,17 @@ class DummyInstance(InputGraph):
 
             if not is_argument_flag_only(arg_type, arg_value):
                 if not isinstance(arg_value, list):
-                    arg_value = [arg_value] # pack arg_value
+                    arg_value = [arg_value]  # pack arg_value
 
                 if self.do_scale_parameter(arg_key):
-                    param += " " + " ".join([f"\"{self.get_scaled_arg_value(arg_key, val, p)}\"" for val in arg_value])
+                    param += " " + " ".join(
+                        [
+                            f'"{self.get_scaled_arg_value(arg_key, val, p)}"'
+                            for val in arg_value
+                        ]
+                    )
                 else:
-                    param += " " + " ".join([f"\"{val}\"" for val in arg_value])
+                    param += " " + " ".join([f'"{val}"' for val in arg_value])
 
             if param:
                 params.append(param)
@@ -308,28 +313,28 @@ class DummyInstance(InputGraph):
         for key, value in self.params.items():
             if isinstance(value, dict):
                 argument_type = get_argument_type_from_str(value["type"])
-                value = value["value"] # flatten param
-
+                value = value["value"]  # flatten param
 
             if isinstance(value, bool):
                 param_strings.append(key)
             else:
                 param_strings.append(f"{key}={value}")
 
-
         def parse_argument(arg_type, arg_key, arg_value):
             param = ""
 
-            if not is_argument_positional(arg_type) and (not is_argument_flag_only(arg_type, arg_value) or arg_value):
+            if not is_argument_positional(arg_type) and (
+                not is_argument_flag_only(arg_type, arg_value) or arg_value
+            ):
                 param += f"{arg_key}"
 
             if arg_type != CLIArgumentType.FLAG or not isinstance(arg_value, bool):
                 # pack arg_value
                 if not isinstance(arg_value, list):
-                    arg_value = [arg_value] # pack arg_value
+                    arg_value = [arg_value]  # pack arg_value
 
                 # add arg_value to param
-                param += "=" + ",".join([f"\"{val}\"" for val in arg_value])
+                param += "=" + ",".join([f'"{val}"' for val in arg_value])
 
             if param:
                 param_strings.append(param)
@@ -337,6 +342,7 @@ class DummyInstance(InputGraph):
         for_each_argument(self.params, parse_argument)
         name = self.name_ + "_" + "_".join(param_strings)
         return slugify.slugify(name)
+
 
 class ExperimentSuite:
     def __init__(
@@ -350,8 +356,8 @@ class ExperimentSuite:
         configs=[],
         tasks_per_node=None,
         time_limit=None,
-        seeds = [0],
-        omit_seed = True,
+        seeds=[0],
+        omit_seed=True,
         input_time_limit={},
     ):
         self.name = name
@@ -421,9 +427,19 @@ def load_suite_from_yaml(path):
             if "generator" in graph:
                 generator = graph.pop("generator")
                 if generator == "kagen":
-                    inputs.extend([KaGenGraph(**graph_variant) for graph_variant in explode(graph)])
+                    inputs.extend(
+                        [
+                            KaGenGraph(**graph_variant)
+                            for graph_variant in explode(graph)
+                        ]
+                    )
                 elif generator == "dummy":
-                    inputs.extend([DummyInstance(**graph_variant) for graph_variant in explode(graph)])
+                    inputs.extend(
+                        [
+                            DummyInstance(**graph_variant)
+                            for graph_variant in explode(graph)
+                        ]
+                    )
                 else:
                     raise ValueError(
                         f"'{generator}' is an unsupported argument for a graph generator. Use ['kagen', 'dummy'] instead."
@@ -459,27 +475,32 @@ def load_suite_from_yaml(path):
 
 
 def is_argument_explosive(arg_type, arg_val):
-    if arg_type in [CLIArgumentType.FLAG_LIST, CLIArgumentType.POSITIONAL_LIST] and is_list_of_list(arg_val):
+    if arg_type in [
+        CLIArgumentType.FLAG_LIST,
+        CLIArgumentType.POSITIONAL_LIST,
+    ] and is_list_of_list(arg_val):
         # a suite.yaml snippet
         # BEGIN YAML
         # key:
         #   - type: "positional_list"
         #     value: [[1, 2], [2, 3], [3, 4]]
         # END YAML
-        # 
-        # should result in three configurations: 
-        # ["\"1\" \"2\"", "\"2\" \"3\"", "\"3\" \"4\""] 
+        #
+        # should result in three configurations:
+        # ["\"1\" \"2\"", "\"2\" \"3\"", "\"3\" \"4\""]
         return True
-    elif arg_type in [CLIArgumentType.FLAG, CLIArgumentType.POSITIONAL] and isinstance(arg_val, list):
+    elif arg_type in [CLIArgumentType.FLAG, CLIArgumentType.POSITIONAL] and isinstance(
+        arg_val, list
+    ):
         # a suite.yaml snippet
         # BEGIN YAML
         # key:
         #   - type: "flag"
         #     value: [1, 2, 3]
         # END YAML
-        # 
-        # should result in three configurations: 
-        # ["--key \"1\"", "--key \"2\"", "--key \"3\"] 
+        #
+        # should result in three configurations:
+        # ["--key \"1\"", "--key \"2\"", "--key \"3\"]
         return True
     else:
         return False
@@ -522,16 +543,19 @@ def explode(config):
             break
     if not configs:
         return [config]
-    
+
     return configs
 
 
 def params_to_args(params):
     args = []
+
     def parse_argument(arg_type, arg_key, arg_value):
         arg = ""
 
-        if not is_argument_positional(arg_type) and (not is_argument_flag_only(arg_type, arg_value) or arg_value):
+        if not is_argument_positional(arg_type) and (
+            not is_argument_flag_only(arg_type, arg_value) or arg_value
+        ):
             arg += "-"
             if len(arg_key) > 1:
                 arg += "-"
@@ -539,9 +563,9 @@ def params_to_args(params):
 
         if not is_argument_flag_only(arg_type, arg_value):
             if not isinstance(arg_value, list):
-                arg_value = [arg_value] # pack arg_value
+                arg_value = [arg_value]  # pack arg_value
 
-            arg += " " + " ".join([f"\"{val}\"" for val in arg_value])
+            arg += " " + " ".join([f'"{val}"' for val in arg_value])
 
         if arg:
             args.append(arg)
