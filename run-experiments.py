@@ -57,7 +57,7 @@ def main():
     ).split(":")
     default_search_dirs.append(os.path.dirname(__file__))
     parser.add_argument("--search-dirs", nargs="*", default=default_search_dirs)
-    parser.add_argument("--suite-files", default=[])
+    parser.add_argument("--suite-files", nargs="*", default=[])
 
     parser.add_argument("--output-dir")
     default_experiment_data_dir = os.environ.get(
