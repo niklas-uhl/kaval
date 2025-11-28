@@ -179,6 +179,11 @@ class SharedMemoryRunner(BaseRunner):
                     continue
                 for threads in experiment_suite.threads_per_rank:
                     for i, config in enumerate(experiment_suite.configs):
+                        job_time_limit = experiment_suite.get_input_time_limit(
+                            input.name
+                        )
+                        if not job_time_limit:
+                            job_time_limit = self.time_limit
                         local_config = config.copy()
                         mpi_ranks = ncores // threads
 
@@ -211,19 +216,24 @@ class SharedMemoryRunner(BaseRunner):
                         )
                         print(cmd_string, end="")
                         sys.stdout.flush()
-                        with open(log_path, "w") as log_file:
-                            with open(err_path, "w") as err_file:
-                                ret = subprocess.run(
-                                    cmd_string,
-                                    stdout=log_file,
-                                    stderr=err_file,
-                                    shell=True,
-                                )
-                        if ret.returncode == 0:
-                            print("finished.")
-                        else:
+                        try:
+                            with open(log_path, "w") as log_file:
+                                with open(err_path, "w") as err_file:
+                                    ret = subprocess.run(
+                                        cmd_string,
+                                        stdout=log_file,
+                                        stderr=err_file,
+                                        shell=True,
+                                        timeout=job_time_limit * 60
+                                    )
+                            if ret.returncode == 0:
+                                print("finished.")
+                            else:
+                                self.failed += 1
+                                print("failed.")
+                        except subprocess.TimeoutExpired:
                             self.failed += 1
-                            print("failed.")
+                            print(f"timed out after {job_time_limit} minutes.")
                         self.total_jobs += 1
         print(
             f"Finished suite {experiment_suite.name}. Output files in {self.output_directory}"
