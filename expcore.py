@@ -168,13 +168,76 @@ class KaGenGraph(InputGraph):
             self.m = kwargs.get("m", 1 << int(kwargs["M"]))
         except (TypeError, KeyError):
             self.m = None
+        # handle extra_args similar to DummyInstance
+        self.extra_args = kwargs.get("extra_args", {})
+        self.parse_scale_weak_params({"scale_weak": kwargs.get("extra_args_scale_weak")})
+        # cleanup consumed keys
         kwargs.pop("n", None)
         kwargs.pop("N", None)
         kwargs.pop("m", None)
         kwargs.pop("M", None)
         self.scale_weak = kwargs.get("scale_weak", False)
         kwargs.pop("scale_weak", False)
+        kwargs.pop("extra_args", None)
+        kwargs.pop("extra_args_scale_weak", None)
         self.params = kwargs
+
+    def parse_scale_weak_params(self, kwargs):
+        scale_weak_params = kwargs.get("scale_weak")
+        if scale_weak_params is None:
+            self.extra_scale_weak_params = []
+        else:
+            if not isinstance(scale_weak_params, list):
+                scale_weak_params = [scale_weak_params]
+            self.extra_scale_weak_params = scale_weak_params
+
+    def do_scale_parameter(self, parameter):
+        return parameter in getattr(self, "extra_scale_weak_params", [])
+
+    def get_scaled_value(self, parameter, value, p):
+        if self.do_scale_parameter(parameter):
+            if not isinstance(value, int):
+                raise ValueError(
+                    f"Weak scaling parameter '{parameter}' has a non-integer value of '{value}'."
+                )
+            return int(value) * p
+        else:
+            return int(value)
+
+    def args_for_extra(self, mpi_ranks, threads_per_rank):
+        p = mpi_ranks * threads_per_rank
+        params = []
+
+        def parse_argument(arg_type, arg_key, arg_value):
+            param = ""
+
+            if not is_argument_positional(arg_type) and (
+                not is_argument_flag_only(arg_type, arg_value) or arg_value
+            ):
+                param += "-"
+                if len(arg_key) > 1:
+                    param += "-"
+                param += f"{arg_key}"
+
+            if not is_argument_flag_only(arg_type, arg_value):
+                if not isinstance(arg_value, list):
+                    arg_value = [arg_value]  # pack arg_value
+
+                if self.do_scale_parameter(arg_key):
+                    param += " " + " ".join(
+                        [
+                            f'"{self.get_scaled_value(arg_key, val, p)}"'
+                            for val in arg_value
+                        ]
+                    )
+                else:
+                    param += " " + " ".join([f'"{val}"' for val in arg_value])
+
+            if param:
+                params.append(param)
+
+        for_each_argument(self.extra_args, parse_argument)
+        return params
 
     def get_n(self, p):
         if self.scale_weak:
@@ -219,7 +282,9 @@ class KaGenGraph(InputGraph):
         kagen_option_string = ";".join(params)
         if escape:
             kagen_option_string = '"{}"'.format(kagen_option_string)
-        return ["--kagen_option_string", kagen_option_string]
+        # append extra_args after kagen option string
+        extra = self.args_for_extra(mpi_ranks, threads_per_rank)
+        return ["--kagen_option_string", kagen_option_string] + extra
 
     @property
     def name(self):
@@ -231,6 +296,16 @@ class KaGenGraph(InputGraph):
         params += stringify_params(self.params)
         if self.scale_weak:
             params.append("weak")
+        # include extra_args compactly
+        extra_parts = []
+        def add_extra(arg_type, arg_key, arg_value):
+            if isinstance(arg_value, bool):
+                extra_parts.append(arg_key)
+            else:
+                extra_parts.append(f"{arg_key}={arg_value}")
+        for_each_argument(self.extra_args, add_extra)
+        if extra_parts:
+            params.append("extra=" + ",".join(extra_parts))
         name = f"KaGen_{'_'.join(params)}"
         return slugify.slugify(name)
 
@@ -518,8 +593,8 @@ def is_list_of_list(val):
 def explode(config):
     configs = []
     for flag, value in config.items():
-        if isinstance(value, dict):
-            assert "value" in value and "type" in value
+        if isinstance(value, dict) and "value" in value and "type" in value:
+            # assert "value" in value and "type" in value
 
             argument_type = get_argument_type_from_str(value["type"])
             argument_value = value["value"]
