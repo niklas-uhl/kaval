@@ -666,7 +666,24 @@ def get_runner(args, suite):
     runner.max_cores = getattr(args, "max_cores", sys.maxsize)
     runner.min_cores = getattr(args, "min_cores", 1)
     if getattr(args, "cores", None):
-        runner.override_cores = args.cores
+        # Interpret special keyword 'node-size-pow2'
+        if len(args.cores) == 1 and isinstance(args.cores[0], str) and args.cores[0] == 'node-size-pow2':
+            # Build list: [tpn, 2*tpn, 4*tpn, ...] up to max_cores and >= min_cores
+            tpn = suite.tasks_per_node if getattr(suite, 'tasks_per_node', None) else args.tasks_per_node
+            if not tpn:
+                raise SystemExit("--cores node-size-pow2 requires --tasks-per-node or suite.tasks_per_node to be set")
+            max_cores = getattr(args, 'max_cores', sys.maxsize)
+            min_cores = getattr(args, 'min_cores', 1)
+            lst = []
+            val = int(tpn)
+            while val <= max_cores:
+                if val >= min_cores:
+                    lst.append(val)
+                val *= 2
+            runner.override_cores = lst
+        else:
+            # Convert possible string list to ints
+            runner.override_cores = [int(c) for c in args.cores]
     else:
         runner.override_cores = None
     return runner

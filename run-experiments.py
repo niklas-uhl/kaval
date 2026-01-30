@@ -99,9 +99,9 @@ def main():
     parser.add_argument(
         "--tasks-per-node", default=os.environ.get("TASKS_PER_NODE", None), type=int
     )
-    parser.add_argument("--max-cores", default=sys.maxsize, type=int)
+    parser.add_argument("--max-cores", default=8000, type=int)
     parser.add_argument("--min-cores", default=1, type=int)
-    parser.add_argument("--cores", nargs="*", type=int, help="Override suite ncores with explicit list of core counts")
+    parser.add_argument("--cores", nargs="*", help="Override suite ncores with explicit list of core counts or special keyword 'node-size-pow2' to use powers of two multiples of tasks_per_node")
     parser.add_argument(
         "-t", "--time-limit", default=os.environ.get("TIME_LIMIT", 20), type=int
     )
