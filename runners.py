@@ -191,9 +191,15 @@ class SharedMemoryRunner(BaseRunner):
         with open(self.command_template) as template_file:
             command_template = template_file.read()
         command_template = Template(command_template)
+        # Determine core list with overrides and bounds
+        cores_list = getattr(self, "override_cores", None)
+        if cores_list is None:
+            cores_list = experiment_suite.cores
+        min_cores = getattr(self, "min_cores", 1)
+        max_cores = getattr(self, "max_cores", sys.maxsize)
         for iinput, input in enumerate(experiment_suite.inputs):
-            for ncores in experiment_suite.cores:
-                if ncores > self.max_cores:
+            for ncores in cores_list:
+                if ncores < min_cores or ncores > max_cores:
                     continue
                 for seed in experiment_suite.seeds:
                     for threads_per_rank in experiment_suite.threads_per_rank:
@@ -311,8 +317,16 @@ class SBatchRunner(BaseRunner):
             command_template = template_file.read()
         command_template = Template(command_template)
         njobs = 0
+        # Determine core list with overrides and bounds
+        cores_list = getattr(self, "override_cores", None)
+        if cores_list is None:
+            cores_list = experiment_suite.cores
+        min_cores = getattr(self, "min_cores", 1)
+        max_cores = getattr(self, "max_cores", sys.maxsize)
         for iinput, input in enumerate(experiment_suite.inputs):
-            for ncores in experiment_suite.cores:
+            for ncores in cores_list:
+                if ncores < min_cores or ncores > max_cores:
+                    continue
                 if experiment_suite.tasks_per_node:
                     tasks_per_node = experiment_suite.tasks_per_node
                 else:
@@ -344,8 +358,6 @@ class SBatchRunner(BaseRunner):
                 for threads_per_rank in experiment_suite.threads_per_rank:
                     mpi_ranks = ncores // threads_per_rank
                     ranks_per_node = tasks_per_node // threads_per_rank
-                    # jobname = self.jobname(iinput, input, mpi_ranks, threads_per_rank)
-                    # jobname = f"{input_name}-np{mpi_ranks}-t{threads_per_rank}"
                     for i, config in enumerate(experiment_suite.configs):
                         for seed in experiment_suite.seeds:
                             job_time_limit = experiment_suite.get_input_time_limit(
@@ -357,7 +369,6 @@ class SBatchRunner(BaseRunner):
                             config_jobname = self.jobname(
                                 iinput, input, mpi_ranks, threads_per_rank, i, seed=seed
                             )
-                            # config_jobname = jobname + "-c" + str(i)
                             cmd = self.make_cmd_for_config(
                                 experiment_suite,
                                 input,
@@ -585,10 +596,14 @@ def get_runner(args, suite):
             suite.omit_seed,
             args.fresh,
         )
+        # Apply core overrides/bounds to shared runner as well
+        runner.max_cores = getattr(args, "max_cores", sys.maxsize)
+        runner.min_cores = getattr(args, "min_cores", 1)
+        runner.override_cores = args.cores if getattr(args, "cores", None) else None
         return runner
 
     elif args.machine in "supermuc":
-        return SuperMUCRunner(
+        runner = SuperMUCRunner(
             suite.name,
             suite.output_path_option_name,
             args.experiment_data_dir,
@@ -607,7 +622,7 @@ def get_runner(args, suite):
             args.fresh,
         )
     elif args.machine in "horeka":
-        return HorekaRunner(
+        runner = HorekaRunner(
             suite.name,
             suite.output_path_option_name,
             args.experiment_data_dir,
@@ -626,7 +641,7 @@ def get_runner(args, suite):
             args.fresh,
         )
     elif args.machine == "generic-job-file":
-        return GenericDistributedMemoryRunner(
+        runner = GenericDistributedMemoryRunner(
             suite.name,
             suite.output_path_option_name,
             args.experiment_data_dir,
@@ -646,3 +661,12 @@ def get_runner(args, suite):
         )
     else:
         exit("Unknown machine type: " + args.machine)
+
+    # Set distributed runner core constraints/overrides
+    runner.max_cores = getattr(args, "max_cores", sys.maxsize)
+    runner.min_cores = getattr(args, "min_cores", 1)
+    if getattr(args, "cores", None):
+        runner.override_cores = args.cores
+    else:
+        runner.override_cores = None
+    return runner
