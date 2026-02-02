@@ -220,16 +220,19 @@ class SharedMemoryRunner(BaseRunner):
                             local_config = config.copy()
                             mpi_ranks = ncores // threads_per_rank
 
-                            config_job_name = self.config_name(
+                            config_name = self.config_name(
+                                iinput, input, mpi_ranks, threads_per_rank, i, seed=seed
+                            )
+                            config_job_name = self.jobname(
                                 iinput, input, mpi_ranks, threads_per_rank, i, seed=seed
                             )
                             json_output_prefix_path = (
                                 self.output_directory / f"{config_job_name}_timer.json"
                             )
                             local_config["json_output_path"] = str(json_output_prefix_path)
-                            log_path = self.output_directory / f"{config_job_name}-log.txt"
+                            log_path = self.output_directory / f"{config_name}-log.txt"
                             err_path = (
-                                self.output_directory / f"{config_job_name}-error-log.txt"
+                                self.output_directory / f"{config_name}-error-log.txt"
                             )
 
                             cmd = self.make_cmd_for_config(
