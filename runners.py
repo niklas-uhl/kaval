@@ -58,8 +58,10 @@ class BaseRunner:
     ):
         # append experiment_data_dir with current date
         data_suffix = date.today().strftime("%y_%m_%d")
+        # Include prefix/suffix in directory name to prevent overwrites
+        dir_suite_name = f"{jobname_prefix}{suite_name}{jobname_suffix}"
         self.experiment_data_directory = Path(experiment_data_directory) / (
-            suite_name + "_" + data_suffix
+            dir_suite_name + "_" + data_suffix
         )
         if (fresh):
             shutil.rmtree(self.experiment_data_directory)
