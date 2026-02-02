@@ -120,6 +120,18 @@ def main():
         help="Cleans the experiment data directory before starting the experiment"
     )
 
+    parser.add_argument(
+        "--jobname-prefix",
+        default="",
+        help="Prefix to prepend to job names"
+    )
+
+    parser.add_argument(
+        "--jobname-suffix",
+        default="",
+        help="Suffix to append to job names"
+    )
+
     args = parser.parse_args()
     suites = load_suites(args.suite_files, args.search_dirs)
 

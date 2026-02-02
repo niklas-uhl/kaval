@@ -52,12 +52,16 @@ class BaseRunner:
         omit_output_path=False,
         omit_seed=False,
         fresh=False,
+        jobname_prefix="",
+        jobname_suffix="",
 
     ):
         # append experiment_data_dir with current date
         data_suffix = date.today().strftime("%y_%m_%d")
+        # Include prefix/suffix in directory name to prevent overwrites
+        dir_suite_name = f"{jobname_prefix}{suite_name}{jobname_suffix}"
         self.experiment_data_directory = Path(experiment_data_directory) / (
-            suite_name + "_" + data_suffix
+            dir_suite_name + "_" + data_suffix
         )
         if (fresh):
             shutil.rmtree(self.experiment_data_directory)
@@ -77,6 +81,8 @@ class BaseRunner:
         self.tasks_per_node = None
         self.suite_name = suite_name
         self.output_path_option_name = output_path_option_name
+        self.jobname_prefix = jobname_prefix
+        self.jobname_suffix = jobname_suffix
 
     def dump_config(self, experiment_suite: ExperimentSuite):
         with open(self.output_directory / "config.json", "w") as file:
@@ -145,7 +151,12 @@ class BaseRunner:
         config_name = self.config_name(
             iinput, input, mpi_ranks, threads, iconfig, cores, seed
         )
-        return f"{self.suite_name}-{config_name}"
+        jobname = f"{self.suite_name}-{config_name}"
+        if self.jobname_prefix:
+            jobname = f"{self.jobname_prefix}{jobname}"
+        if self.jobname_suffix:
+            jobname = f"{jobname}{self.jobname_suffix}"
+        return jobname
 
 
 sbatch_template_dir = Path(__file__).parent / "sbatch-templates"
@@ -168,6 +179,8 @@ class SharedMemoryRunner(BaseRunner):
         omit_output_path,
         omit_seed,
         fresh,
+        jobname_prefix="",
+        jobname_suffix="",
     ):
         BaseRunner.__init__(
             self,
@@ -179,7 +192,9 @@ class SharedMemoryRunner(BaseRunner):
             command_template,
             omit_output_path,
             omit_seed,
-            fresh
+            fresh,
+            jobname_prefix,
+            jobname_suffix,
         )
         self.max_cores = max_cores
         self.failed = 0
@@ -207,16 +222,19 @@ class SharedMemoryRunner(BaseRunner):
                             local_config = config.copy()
                             mpi_ranks = ncores // threads_per_rank
 
-                            config_job_name = self.config_name(
+                            config_name = self.config_name(
+                                iinput, input, mpi_ranks, threads_per_rank, i, seed=seed
+                            )
+                            config_job_name = self.jobname(
                                 iinput, input, mpi_ranks, threads_per_rank, i, seed=seed
                             )
                             json_output_prefix_path = (
                                 self.output_directory / f"{config_job_name}_timer.json"
                             )
                             local_config["json_output_path"] = str(json_output_prefix_path)
-                            log_path = self.output_directory / f"{config_job_name}-log.txt"
+                            log_path = self.output_directory / f"{config_name}-log.txt"
                             err_path = (
-                                self.output_directory / f"{config_job_name}-error-log.txt"
+                                self.output_directory / f"{config_name}-error-log.txt"
                             )
 
                             cmd = self.make_cmd_for_config(
@@ -278,7 +296,9 @@ class SBatchRunner(BaseRunner):
         use_test_partition=False,
         omit_output_path=False,
         omit_seed=False,
-        fresh=False
+        fresh=False,
+        jobname_prefix="",
+        jobname_suffix="",
     ):
         BaseRunner.__init__(
             self,
@@ -290,7 +310,9 @@ class SBatchRunner(BaseRunner):
             command_template,
             omit_output_path,
             omit_seed,
-            fresh
+            fresh,
+            jobname_prefix,
+            jobname_suffix,
         )
         self.job_output_directory = (
             Path(job_output_directory)
@@ -434,7 +456,9 @@ class SuperMUCRunner(SBatchRunner):
         use_test_partition=False,
         omit_output_path=False,
         omit_seed=False,
-        fresh=False
+        fresh=False,
+        jobname_prefix="",
+        jobname_suffix="",
     ):
         SBatchRunner.__init__(
             self,
@@ -452,7 +476,9 @@ class SuperMUCRunner(SBatchRunner):
             use_test_partition,
             omit_output_path,
             omit_seed,
-            fresh
+            fresh,
+            jobname_prefix,
+            jobname_suffix,
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 48
 
@@ -495,6 +521,8 @@ class HorekaRunner(SBatchRunner):
         omit_output_path=False,
         omit_seed=False,
         fresh=False,
+        jobname_prefix="",
+        jobname_suffix="",
     ):
         SBatchRunner.__init__(
             self,
@@ -512,7 +540,9 @@ class HorekaRunner(SBatchRunner):
             use_test_partition,
             omit_output_path,
             omit_seed,
-            fresh
+            fresh,
+            jobname_prefix,
+            jobname_suffix,
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 76
 
@@ -553,7 +583,9 @@ class GenericDistributedMemoryRunner(SBatchRunner):
         use_test_partition=False,
         omit_output_path=False,
         omit_seed=False,
-        fresh=False
+        fresh=False,
+        jobname_prefix="",
+        jobname_suffix="",
     ):
         SBatchRunner.__init__(
             self,
@@ -571,7 +603,9 @@ class GenericDistributedMemoryRunner(SBatchRunner):
             use_test_partition,
             omit_output_path,
             omit_seed,
-            fresh
+            fresh,
+            jobname_prefix,
+            jobname_suffix,
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 1
 
@@ -595,6 +629,8 @@ def get_runner(args, suite):
             args.omit_output_path,
             suite.omit_seed,
             args.fresh,
+            args.jobname_prefix,
+            args.jobname_suffix,
         )
         # Apply core overrides/bounds to shared runner as well
         runner.max_cores = getattr(args, "max_cores", sys.maxsize)
@@ -620,6 +656,8 @@ def get_runner(args, suite):
             args.omit_output_path,
             suite.omit_seed,
             args.fresh,
+            args.jobname_prefix,
+            args.jobname_suffix,
         )
     elif args.machine in "horeka":
         runner = HorekaRunner(
@@ -639,6 +677,8 @@ def get_runner(args, suite):
             args.omit_output_path,
             suite.omit_seed,
             args.fresh,
+            args.jobname_prefix,
+            args.jobname_suffix,
         )
     elif args.machine == "generic-job-file":
         runner = GenericDistributedMemoryRunner(
@@ -657,7 +697,9 @@ def get_runner(args, suite):
             args.test,
             args.omit_output_path,
             suite.omit_seed,
-            args.fresh
+            args.fresh,
+            args.jobname_prefix,
+            args.jobname_suffix,
         )
     else:
         exit("Unknown machine type: " + args.machine)
