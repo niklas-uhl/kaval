@@ -59,8 +59,13 @@ class BaseRunner:
         self.experiment_data_directory = Path(experiment_data_directory) / (
             suite_name + "_" + data_suffix
         )
-        if (fresh):
-            shutil.rmtree(self.experiment_data_directory)
+        if self.experiment_data_directory.exists() and not self.experiment_data_directory.is_dir():
+            raise RuntimeError(f"Path exists but is not a directory: {self.experiment_data_directory}")
+        if fresh:
+            if self.experiment_data_directory.exists():
+                shutil.rmtree(self.experiment_data_directory)
+            else:
+                print(f"Warning: --fresh specified but directory does not exist: {self.experiment_data_directory}")
         self.experiment_data_directory.mkdir(exist_ok=True, parents=True)
         self.machine = machine
         self.output_directory = (
