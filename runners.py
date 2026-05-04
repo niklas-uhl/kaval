@@ -52,13 +52,14 @@ class BaseRunner:
         omit_output_path=False,
         omit_seed=False,
         fresh=False,
-
+        date_suffix=True,
     ):
-        # append experiment_data_dir with current date
-        data_suffix = date.today().strftime("%y_%m_%d")
-        self.experiment_data_directory = Path(experiment_data_directory) / (
-            suite_name + "_" + data_suffix
-        )
+        if date_suffix:
+            scoped_name = suite_name + "_" + date.today().strftime("%y_%m_%d")
+        else:
+            scoped_name = suite_name
+        self.scoped_name = scoped_name
+        self.experiment_data_directory = Path(experiment_data_directory) / scoped_name
         if self.experiment_data_directory.exists() and not self.experiment_data_directory.is_dir():
             raise RuntimeError(f"Path exists but is not a directory: {self.experiment_data_directory}")
         if fresh:
@@ -69,7 +70,7 @@ class BaseRunner:
         self.experiment_data_directory.mkdir(exist_ok=True, parents=True)
         self.machine = machine
         self.output_directory = (
-            Path(output_directory)
+            Path(output_directory) / scoped_name
             if output_directory
             else (self.experiment_data_directory / "output")
         )
@@ -173,6 +174,7 @@ class SharedMemoryRunner(BaseRunner):
         omit_output_path,
         omit_seed,
         fresh,
+        date_suffix=True,
     ):
         BaseRunner.__init__(
             self,
@@ -184,7 +186,8 @@ class SharedMemoryRunner(BaseRunner):
             command_template,
             omit_output_path,
             omit_seed,
-            fresh
+            fresh,
+            date_suffix,
         )
         self.max_cores = max_cores
         self.failed = 0
@@ -283,7 +286,8 @@ class SBatchRunner(BaseRunner):
         use_test_partition=False,
         omit_output_path=False,
         omit_seed=False,
-        fresh=False
+        fresh=False,
+        date_suffix=True,
     ):
         BaseRunner.__init__(
             self,
@@ -295,10 +299,11 @@ class SBatchRunner(BaseRunner):
             command_template,
             omit_output_path,
             omit_seed,
-            fresh
+            fresh,
+            date_suffix,
         )
         self.job_output_directory = (
-            Path(job_output_directory)
+            Path(job_output_directory) / self.scoped_name
             if job_output_directory
             else (self.experiment_data_directory / "jobfiles")
         )
@@ -439,7 +444,8 @@ class SuperMUCRunner(SBatchRunner):
         use_test_partition=False,
         omit_output_path=False,
         omit_seed=False,
-        fresh=False
+        fresh=False,
+        date_suffix=True,
     ):
         SBatchRunner.__init__(
             self,
@@ -457,7 +463,8 @@ class SuperMUCRunner(SBatchRunner):
             use_test_partition,
             omit_output_path,
             omit_seed,
-            fresh
+            fresh,
+            date_suffix,
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 48
 
@@ -500,6 +507,7 @@ class HorekaRunner(SBatchRunner):
         omit_output_path=False,
         omit_seed=False,
         fresh=False,
+        date_suffix=True,
     ):
         SBatchRunner.__init__(
             self,
@@ -517,7 +525,8 @@ class HorekaRunner(SBatchRunner):
             use_test_partition,
             omit_output_path,
             omit_seed,
-            fresh
+            fresh,
+            date_suffix,
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 76
 
@@ -558,7 +567,8 @@ class GenericDistributedMemoryRunner(SBatchRunner):
         use_test_partition=False,
         omit_output_path=False,
         omit_seed=False,
-        fresh=False
+        fresh=False,
+        date_suffix=True,
     ):
         SBatchRunner.__init__(
             self,
@@ -576,7 +586,8 @@ class GenericDistributedMemoryRunner(SBatchRunner):
             use_test_partition,
             omit_output_path,
             omit_seed,
-            fresh
+            fresh,
+            date_suffix,
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 1
 
@@ -587,8 +598,38 @@ class GenericDistributedMemoryRunner(SBatchRunner):
         return 1
 
 
+def _expand_cores_override(args, suite):
+    """Expand --cores tokens into a concrete list, or return None to use suite cores."""
+    if not getattr(args, "cores", None):
+        return None
+    tokens = args.cores
+    max_cores = getattr(args, "max_cores", sys.maxsize)
+    min_cores = getattr(args, "min_cores", 1)
+    if len(tokens) == 1 and isinstance(tokens[0], str):
+        token = tokens[0]
+        if token == "pow2":
+            lst, val = [], 1
+            while val <= max_cores:
+                if val >= min_cores:
+                    lst.append(val)
+                val *= 2
+            return lst
+        if token == "node-size-pow2":
+            tpn = (suite.tasks_per_node if getattr(suite, "tasks_per_node", None) else None) or args.tasks_per_node
+            if not tpn:
+                raise SystemExit("--cores node-size-pow2 requires --tasks-per-node or suite.tasks_per_node to be set")
+            lst, val = [], int(tpn)
+            while val <= max_cores:
+                if val >= min_cores:
+                    lst.append(val)
+                val *= 2
+            return lst
+    return [int(c) for c in tokens]
+
+
 def get_runner(args, suite):
     # print("type: ", suite.suite_type)
+    date_suffix = not getattr(args, "no_date_suffix", False)
     if args.machine == "shared":
         runner = SharedMemoryRunner(
             suite.name,
@@ -600,11 +641,11 @@ def get_runner(args, suite):
             args.omit_output_path,
             suite.omit_seed,
             args.fresh,
+            date_suffix,
         )
-        # Apply core overrides/bounds to shared runner as well
         runner.max_cores = getattr(args, "max_cores", sys.maxsize)
         runner.min_cores = getattr(args, "min_cores", 1)
-        runner.override_cores = args.cores if getattr(args, "cores", None) else None
+        runner.override_cores = _expand_cores_override(args, suite)
         return runner
 
     elif args.machine in "supermuc":
@@ -625,6 +666,7 @@ def get_runner(args, suite):
             args.omit_output_path,
             suite.omit_seed,
             args.fresh,
+            date_suffix,
         )
     elif args.machine in "horeka":
         runner = HorekaRunner(
@@ -644,6 +686,7 @@ def get_runner(args, suite):
             args.omit_output_path,
             suite.omit_seed,
             args.fresh,
+            date_suffix,
         )
     elif args.machine == "generic-job-file":
         runner = GenericDistributedMemoryRunner(
@@ -662,33 +705,13 @@ def get_runner(args, suite):
             args.test,
             args.omit_output_path,
             suite.omit_seed,
-            args.fresh
+            args.fresh,
+            date_suffix,
         )
     else:
         exit("Unknown machine type: " + args.machine)
 
-    # Set distributed runner core constraints/overrides
     runner.max_cores = getattr(args, "max_cores", sys.maxsize)
     runner.min_cores = getattr(args, "min_cores", 1)
-    if getattr(args, "cores", None):
-        # Interpret special keyword 'node-size-pow2'
-        if len(args.cores) == 1 and isinstance(args.cores[0], str) and args.cores[0] == 'node-size-pow2':
-            # Build list: [tpn, 2*tpn, 4*tpn, ...] up to max_cores and >= min_cores
-            tpn = suite.tasks_per_node if getattr(suite, 'tasks_per_node', None) else args.tasks_per_node
-            if not tpn:
-                raise SystemExit("--cores node-size-pow2 requires --tasks-per-node or suite.tasks_per_node to be set")
-            max_cores = getattr(args, 'max_cores', sys.maxsize)
-            min_cores = getattr(args, 'min_cores', 1)
-            lst = []
-            val = int(tpn)
-            while val <= max_cores:
-                if val >= min_cores:
-                    lst.append(val)
-                val *= 2
-            runner.override_cores = lst
-        else:
-            # Convert possible string list to ints
-            runner.override_cores = [int(c) for c in args.cores]
-    else:
-        runner.override_cores = None
+    runner.override_cores = _expand_cores_override(args, suite)
     return runner

@@ -101,7 +101,7 @@ def main():
     )
     parser.add_argument("--max-cores", default=8000, type=int)
     parser.add_argument("--min-cores", default=1, type=int)
-    parser.add_argument("--cores", nargs="*", help="Override suite ncores with explicit list of core counts or special keyword 'node-size-pow2' to use powers of two multiples of tasks_per_node")
+    parser.add_argument("--cores", nargs="*", help="Override suite ncores with an explicit list of core counts or a special keyword: 'pow2' for powers of two (1,2,4,...), 'node-size-pow2' for powers-of-two multiples of tasks_per_node")
     parser.add_argument(
         "-t", "--time-limit", default=os.environ.get("TIME_LIMIT", 20), type=int
     )
@@ -118,6 +118,11 @@ def main():
         "--fresh",
         action="store_true",
         help="Cleans the experiment data directory before starting the experiment"
+    )
+    parser.add_argument(
+        "--no-date-suffix",
+        action="store_true",
+        help="Do not append a date suffix to the experiment data and output directories"
     )
 
     args = parser.parse_args()
