@@ -537,7 +537,7 @@ def load_suite_from_yaml(path):
         data["name"],
         executable,
         output_path_option_name,
-        data["ncores"],
+        data.get("ncores", []),
         data.get("threads_per_rank", [1]),
         inputs,
         configs,
