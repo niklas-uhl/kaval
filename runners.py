@@ -370,11 +370,12 @@ class SBatchRunner(BaseRunner):
                     ranks_per_node = tasks_per_node // threads_per_rank
                     for i, config in enumerate(experiment_suite.configs):
                         for seed in experiment_suite.seeds:
-                            job_time_limit = experiment_suite.get_input_time_limit(
-                                input.name
-                            )
-                            if not job_time_limit:
+                            if self.time_limit is not None:
                                 job_time_limit = self.time_limit
+                            else:
+                                job_time_limit = experiment_suite.get_input_time_limit(
+                                    input.name
+                                )
                             time_limit += job_time_limit
                             config_jobname = self.jobname(
                                 iinput, input, mpi_ranks, threads_per_rank, i, seed=seed
