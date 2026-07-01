@@ -29,16 +29,19 @@ from pathlib import Path
 
 
 def load_suites(suite_files, search_paths):
+    instance_sets = expcore.load_instance_sets(search_paths)
     suites = {}
     for path in suite_files:
-        suite = expcore.load_suite_from_yaml(path)
+        suite = expcore.load_suite_from_yaml(path, instance_sets)
         suites[suite.name] = suite
     for path in search_paths:
         if not path:
             continue
         for file in os.listdir(path):
             if file.endswith(".suite.yaml"):
-                suite = expcore.load_suite_from_yaml(os.path.join(path, file))
+                suite = expcore.load_suite_from_yaml(
+                    os.path.join(path, file), instance_sets
+                )
                 suites[suite.name] = suite
     return suites
 
