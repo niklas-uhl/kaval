@@ -146,7 +146,10 @@ def stringify_params(params):
     param_strings = []
     for key, value in params.items():
         if isinstance(value, bool):
-            param_strings.append(key)
+            # KaGen reads a bare flag as true and its absence as false, so only
+            # emit the key when the flag is set; a False flag must be omitted.
+            if value:
+                param_strings.append(key)
         else:
             param_strings.append(f"{key}={value}")
     return param_strings
@@ -155,7 +158,9 @@ def stringify_params(params):
 class KaGenGraph(InputGraph):
 
     def __init__(self, **kwargs):
-        kwargs = kwargs.copy()
+        # deep copy so nested structures (e.g. extra_args) are not aliased
+        # across variants produced by explode()'s shallow copies
+        kwargs = copy.deepcopy(kwargs)
         try:
             self.type = kwargs.get("type")
         except KeyError:
@@ -320,7 +325,9 @@ class KaGenGraph(InputGraph):
 class DummyInstance(InputGraph):
     def __init__(self, **kwargs):
         self.name_ = kwargs["name"]
-        self.params = kwargs.copy()
+        # deep copy so nested param structures are not aliased across variants
+        # produced by explode()'s shallow copies
+        self.params = copy.deepcopy(kwargs)
         self.params.pop("name", None)
         self.parse_scale_weak_params(self.params)
         self.params.pop("scale_weak", None)
