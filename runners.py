@@ -200,11 +200,14 @@ class SharedMemoryRunner(BaseRunner):
             command_template = template_file.read()
         command_template = Template(command_template)
         # Determine core list with overrides and bounds
+        min_cores = getattr(self, "min_cores", DEFAULT_MIN_CORES)
+        max_cores = getattr(self, "max_cores", DEFAULT_MAX_CORES)
         cores_list = getattr(self, "override_cores", None)
         if cores_list is None:
-            cores_list = experiment_suite.cores
-        min_cores = getattr(self, "min_cores", 1)
-        max_cores = getattr(self, "max_cores", sys.maxsize)
+            tpn = experiment_suite.tasks_per_node or getattr(self, "tasks_per_node", None)
+            cores_list = _expand_cores_tokens(
+                experiment_suite.cores, min_cores, max_cores, tpn
+            )
         for iinput, input in enumerate(experiment_suite.inputs):
             for ncores in cores_list:
                 if ncores < min_cores or ncores > max_cores:
@@ -328,11 +331,14 @@ class SBatchRunner(BaseRunner):
         command_template = Template(command_template)
         njobs = 0
         # Determine core list with overrides and bounds
+        min_cores = getattr(self, "min_cores", DEFAULT_MIN_CORES)
+        max_cores = getattr(self, "max_cores", DEFAULT_MAX_CORES)
         cores_list = getattr(self, "override_cores", None)
         if cores_list is None:
-            cores_list = experiment_suite.cores
-        min_cores = getattr(self, "min_cores", 1)
-        max_cores = getattr(self, "max_cores", sys.maxsize)
+            tpn = experiment_suite.tasks_per_node or getattr(self, "tasks_per_node", None)
+            cores_list = _expand_cores_tokens(
+                experiment_suite.cores, min_cores, max_cores, tpn
+            )
         for iinput, input in enumerate(experiment_suite.inputs):
             for ncores in cores_list:
                 if ncores < min_cores or ncores > max_cores:
@@ -599,13 +605,17 @@ class GenericDistributedMemoryRunner(SBatchRunner):
         return 1
 
 
-def _expand_cores_override(args, suite):
-    """Expand --cores tokens into a concrete list, or return None to use suite cores."""
-    if not getattr(args, "cores", None):
-        return None
-    tokens = args.cores
-    max_cores = getattr(args, "max_cores", sys.maxsize)
-    min_cores = getattr(args, "min_cores", 1)
+def _expand_cores_tokens(tokens, min_cores, max_cores, tasks_per_node=None):
+    """Expand a list of ncores tokens into a concrete list of core counts.
+
+    A single special keyword ('pow2', 'sqr', 'sqr-pow2', 'node-size-pow2') is
+    expanded against the given bounds; otherwise the tokens are treated as an
+    explicit list of integers. Shared by the --cores CLI override and the
+    suite's ncores field so both accept the same keywords. A bare keyword
+    (e.g. ncores: sqr-pow2) is accepted as well as a single-element list.
+    """
+    if isinstance(tokens, str):
+        tokens = [tokens]
     if len(tokens) == 1 and isinstance(tokens[0], str):
         token = tokens[0]
         if token == "pow2":
@@ -615,11 +625,25 @@ def _expand_cores_override(args, suite):
                     lst.append(val)
                 val *= 2
             return lst
+        if token == "sqr":
+            lst, i = [], 1
+            while i * i <= max_cores:
+                val = i * i
+                if val >= min_cores:
+                    lst.append(val)
+                i += 1
+            return lst
+        if token == "sqr-pow2":
+            lst, val = [], 1
+            while val <= max_cores:
+                if val >= min_cores:
+                    lst.append(val)
+                val *= 4
+            return lst
         if token == "node-size-pow2":
-            tpn = (suite.tasks_per_node if getattr(suite, "tasks_per_node", None) else None) or args.tasks_per_node
-            if not tpn:
-                raise SystemExit("--cores node-size-pow2 requires --tasks-per-node or suite.tasks_per_node to be set")
-            lst, val = [], int(tpn)
+            if not tasks_per_node:
+                raise SystemExit("'node-size-pow2' ncores requires --tasks-per-node or suite.tasks_per_node to be set")
+            lst, val = [], int(tasks_per_node)
             while val <= max_cores:
                 if val >= min_cores:
                     lst.append(val)
@@ -628,14 +652,43 @@ def _expand_cores_override(args, suite):
     return [int(c) for c in tokens]
 
 
+DEFAULT_MIN_CORES = 1
+DEFAULT_MAX_CORES = 8000
+
+
+def _resolve_cores_bounds(args, suite):
+    """Resolve effective (min_cores, max_cores) with CLI > suite > default precedence."""
+    min_cores = getattr(args, "min_cores", None)
+    if min_cores is None:
+        min_cores = getattr(suite, "min_cores", None)
+    if min_cores is None:
+        min_cores = DEFAULT_MIN_CORES
+    max_cores = getattr(args, "max_cores", None)
+    if max_cores is None:
+        max_cores = getattr(suite, "max_cores", None)
+    if max_cores is None:
+        max_cores = DEFAULT_MAX_CORES
+    return min_cores, max_cores
+
+
+def _expand_cores_override(args, suite):
+    """Expand --cores tokens into a concrete list, or return None to use suite cores."""
+    if not getattr(args, "cores", None):
+        return None
+    min_cores, max_cores = _resolve_cores_bounds(args, suite)
+    tpn = (suite.tasks_per_node if getattr(suite, "tasks_per_node", None) else None) or getattr(args, "tasks_per_node", None)
+    return _expand_cores_tokens(args.cores, min_cores, max_cores, tpn)
+
+
 def get_runner(args, suite):
     # print("type: ", suite.suite_type)
     date_suffix = not getattr(args, "no_date_suffix", False)
+    min_cores, max_cores = _resolve_cores_bounds(args, suite)
     if args.machine == "shared":
         runner = SharedMemoryRunner(
             suite.name,
             suite.output_path_option_name,
-            args.max_cores,
+            max_cores,
             args.experiment_data_dir,
             args.output_dir,
             args.command_template,
@@ -644,8 +697,8 @@ def get_runner(args, suite):
             args.fresh,
             date_suffix,
         )
-        runner.max_cores = getattr(args, "max_cores", sys.maxsize)
-        runner.min_cores = getattr(args, "min_cores", 1)
+        runner.max_cores = max_cores
+        runner.min_cores = min_cores
         runner.override_cores = _expand_cores_override(args, suite)
         return runner
 
@@ -712,7 +765,7 @@ def get_runner(args, suite):
     else:
         exit("Unknown machine type: " + args.machine)
 
-    runner.max_cores = getattr(args, "max_cores", sys.maxsize)
-    runner.min_cores = getattr(args, "min_cores", 1)
+    runner.max_cores = max_cores
+    runner.min_cores = min_cores
     runner.override_cores = _expand_cores_override(args, suite)
     return runner

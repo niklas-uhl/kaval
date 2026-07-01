@@ -434,11 +434,15 @@ class ExperimentSuite:
         seeds=[0],
         omit_seed=True,
         input_time_limit={},
+        min_cores=None,
+        max_cores=None,
     ):
         self.name = name
         self.executable = executable
         self.output_path_option_name = output_path_option_name
         self.cores = cores
+        self.min_cores = min_cores
+        self.max_cores = max_cores
         self.threads_per_rank = threads_per_rank
         self.inputs = inputs
         self.configs = configs
@@ -546,6 +550,8 @@ def load_suite_from_yaml(path):
         seeds=data.get("seeds", [0]),
         omit_seed=data.get("omit_seed", True),
         input_time_limit=time_limits,
+        min_cores=data.get("min_cores"),
+        max_cores=data.get("max_cores"),
     )
 
 
