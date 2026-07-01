@@ -392,15 +392,6 @@ class DummyInstance(InputGraph):
     @property
     def name(self):
         param_strings = []
-        for key, value in self.params.items():
-            if isinstance(value, dict):
-                argument_type = get_argument_type_from_str(value["type"])
-                value = value["value"]  # flatten param
-
-            if isinstance(value, bool):
-                param_strings.append(key)
-            else:
-                param_strings.append(f"{key}={value}")
 
         def parse_argument(arg_type, arg_key, arg_value):
             param = ""
