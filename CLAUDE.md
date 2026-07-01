@@ -79,4 +79,20 @@ graphs:
     N: 24
 ```
 
-See `examples/suites/common.instances.yaml` and `examples/suites/import.suite.yaml`. Parsing lives in `expcore.load_instance_sets()` (discovery) and `expcore.parse_graph_list()` (expansion, incl. imports); unknown or circular imports raise a `ValueError`.
+Imports are transitive: an instance set may itself `import` another set, resolved recursively. Unknown or circular imports raise a `ValueError`.
+
+**Modifying an imported set (`with:`)** — an import entry may carry a `with:` mapping whose keys are merged into every resolved graph before it is built, so a set can be reused with a tweak instead of being duplicated. Keys override existing ones; values may be lists to explode; the modification applies through transitive imports, and on conflict the use-site (outer) `with:` wins:
+
+```yaml
+# reuse a whole set but permute every graph
+graphs:
+  - import: synthetic-large
+    with:
+      permute: True        # merged into each graph as a KaGen flag
+```
+
+A `with:` on a bare-string file input can't be applied — it is logged and the input passes through unmodified.
+
+**Deduplication** — after all imports and modifications resolve, the input list is de-duplicated by graph name (first occurrence kept, order preserved), so diamond imports (two sets importing a common set) or an inline graph that duplicates an imported one don't produce repeated runs. Dropped names are logged.
+
+See `examples/suites/common.instances.yaml` and `examples/suites/import.suite.yaml`. Parsing lives in `expcore.load_instance_sets()` (discovery) and `expcore.parse_graph_list()` (expansion, incl. imports and `with:` overrides); dedup is `expcore.dedup_inputs()`, applied in `load_suite_from_yaml()`.
