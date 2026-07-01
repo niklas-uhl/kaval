@@ -510,12 +510,15 @@ def load_instance_sets(search_paths):
     return instance_sets
 
 
-def parse_graph_list(graph_list, instance_sets=None, _seen=None):
+def parse_graph_list(graph_list, instance_sets=None, _seen=None, overrides=None):
     """Expand a suite ``graphs`` list into InputGraph objects and time limits.
 
     Entries of the form ``{"import": <name>}`` are replaced by the graphs of the
-    referenced instance set (see :func:`load_instance_sets`), recursively.
-    Returns ``(inputs, time_limits)``.
+    referenced instance set (see :func:`load_instance_sets`), recursively. An
+    import entry may carry a ``with`` mapping whose keys are merged into every
+    resolved graph (overriding existing keys) before it is built, e.g. to add
+    ``permute: True`` to a whole set. ``with`` values may themselves be lists to
+    explode. Returns ``(inputs, time_limits)``.
     """
     instance_sets = instance_sets or {}
     _seen = _seen if _seen is not None else set()
@@ -523,6 +526,13 @@ def parse_graph_list(graph_list, instance_sets=None, _seen=None):
     time_limits = {}
     for graph in graph_list:
         if type(graph) == str:
+            if overrides:
+                logging.warning(
+                    "Cannot apply import modifications %s to file input '%s'; "
+                    "including it unmodified.",
+                    overrides,
+                    graph,
+                )
             inputs.append(graph)
             continue
         if "import" in graph:
@@ -536,9 +546,12 @@ def parse_graph_list(graph_list, instance_sets=None, _seen=None):
                     f"Unknown instance set '{set_name}'. "
                     f"Available: {sorted(instance_sets)}."
                 )
+            # merge this import's `with` block under any inherited overrides;
+            # outer (use-site) overrides win on conflict
+            merged_overrides = {**graph.get("with", {}), **(overrides or {})}
             _seen.add(set_name)
             sub_inputs, sub_limits = parse_graph_list(
-                instance_sets[set_name], instance_sets, _seen
+                instance_sets[set_name], instance_sets, _seen, merged_overrides
             )
             _seen.discard(set_name)
             inputs.extend(sub_inputs)
@@ -546,6 +559,8 @@ def parse_graph_list(graph_list, instance_sets=None, _seen=None):
             continue
         # copy so that shared instance-set definitions are not mutated
         graph = copy.deepcopy(graph)
+        if overrides:
+            graph.update(copy.deepcopy(overrides))
         if "generator" in graph:
             generator = graph.pop("generator")
             if generator == "kagen":
@@ -568,6 +583,42 @@ def parse_graph_list(graph_list, instance_sets=None, _seen=None):
     return inputs, time_limits
 
 
+def _input_key(graph):
+    """Identity of an input for deduplication.
+
+    Two inputs are considered the same run if they produce the same name:
+    ``KaGenGraph``/``DummyInstance`` names are derived from all their params,
+    and bare file references are just their string.
+    """
+    if isinstance(graph, InputGraph):
+        return graph.name
+    return str(graph)
+
+
+def dedup_inputs(inputs):
+    """Drop duplicate inputs, keeping first occurrence to preserve order.
+
+    Deep import graphs (e.g. two sets that both import a common set) can yield
+    the same graph via multiple paths; running it more than once just repeats
+    identical jobs. Returns the de-duplicated list; dropped names are logged.
+    """
+    seen = set()
+    result = []
+    dropped = []
+    for graph in inputs:
+        key = _input_key(graph)
+        if key in seen:
+            dropped.append(key)
+            continue
+        seen.add(key)
+        result.append(graph)
+    if dropped:
+        logging.warning(
+            "Dropped %d duplicate input(s): %s", len(dropped), ", ".join(dropped)
+        )
+    return result
+
+
 def load_suite_from_yaml(path, instance_sets=None):
     with open(path, "r") as file:
         data = yaml.safe_load(file)
@@ -580,6 +631,7 @@ def load_suite_from_yaml(path, instance_sets=None):
     else:
         configs = explode(data["config"])
     inputs, time_limits = parse_graph_list(data["graphs"], instance_sets)
+    inputs = dedup_inputs(inputs)
     if "executable" in data:
         executable = data["executable"]
     else:
