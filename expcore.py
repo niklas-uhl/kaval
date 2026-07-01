@@ -486,7 +486,89 @@ class ExperimentSuite:
         return f"ExperimentSuite({self.name}, {self.cores}, {self.inputs}, {self.configs}, {self.time_limit}, {self.input_time_limit})"
 
 
-def load_suite_from_yaml(path):
+def load_instance_sets(search_paths):
+    """Discover reusable instance sets from ``*.instances.yaml`` files.
+
+    Each such file defines a named set of graphs (same format as a suite's
+    ``graphs`` list) via a top-level ``name`` and ``graphs`` key. The returned
+    dict maps set name to its raw graph list, ready to be spliced into a suite
+    that imports it.
+    """
+    instance_sets = {}
+    for path in search_paths:
+        if not path:
+            continue
+        for file in os.listdir(path):
+            if not file.endswith(".instances.yaml"):
+                continue
+            with open(os.path.join(path, file), "r") as f:
+                data = yaml.safe_load(f)
+            if not data or "graphs" not in data:
+                continue
+            name = data.get("name", file[: -len(".instances.yaml")])
+            instance_sets[name] = data["graphs"]
+    return instance_sets
+
+
+def parse_graph_list(graph_list, instance_sets=None, _seen=None):
+    """Expand a suite ``graphs`` list into InputGraph objects and time limits.
+
+    Entries of the form ``{"import": <name>}`` are replaced by the graphs of the
+    referenced instance set (see :func:`load_instance_sets`), recursively.
+    Returns ``(inputs, time_limits)``.
+    """
+    instance_sets = instance_sets or {}
+    _seen = _seen if _seen is not None else set()
+    inputs = []
+    time_limits = {}
+    for graph in graph_list:
+        if type(graph) == str:
+            inputs.append(graph)
+            continue
+        if "import" in graph:
+            set_name = graph["import"]
+            if set_name in _seen:
+                raise ValueError(
+                    f"Circular import of instance set '{set_name}'."
+                )
+            if set_name not in instance_sets:
+                raise ValueError(
+                    f"Unknown instance set '{set_name}'. "
+                    f"Available: {sorted(instance_sets)}."
+                )
+            _seen.add(set_name)
+            sub_inputs, sub_limits = parse_graph_list(
+                instance_sets[set_name], instance_sets, _seen
+            )
+            _seen.discard(set_name)
+            inputs.extend(sub_inputs)
+            time_limits.update(sub_limits)
+            continue
+        # copy so that shared instance-set definitions are not mutated
+        graph = copy.deepcopy(graph)
+        if "generator" in graph:
+            generator = graph.pop("generator")
+            if generator == "kagen":
+                inputs.extend(
+                    [KaGenGraph(**graph_variant) for graph_variant in explode(graph)]
+                )
+            elif generator == "dummy":
+                inputs.extend(
+                    [DummyInstance(**graph_variant) for graph_variant in explode(graph)]
+                )
+            else:
+                raise ValueError(
+                    f"'{generator}' is an unsupported argument for a graph generator. Use ['kagen', 'dummy'] instead."
+                )
+        else:
+            raise ValueError(f"No generator defined for graph: {graph}.")
+        time_limit = graph.get("time_limit")
+        if time_limit:
+            time_limits[graph["name"]] = time_limit
+    return inputs, time_limits
+
+
+def load_suite_from_yaml(path, instance_sets=None):
     with open(path, "r") as file:
         data = yaml.safe_load(file)
     configs = []
@@ -497,37 +579,7 @@ def load_suite_from_yaml(path):
             configs = configs + explode(config)
     else:
         configs = explode(data["config"])
-    inputs = []
-    time_limits = {}
-    for graph in data["graphs"]:
-        if type(graph) == str:
-            inputs.append(graph)
-        else:
-            if "generator" in graph:
-                generator = graph.pop("generator")
-                if generator == "kagen":
-                    inputs.extend(
-                        [
-                            KaGenGraph(**graph_variant)
-                            for graph_variant in explode(graph)
-                        ]
-                    )
-                elif generator == "dummy":
-                    inputs.extend(
-                        [
-                            DummyInstance(**graph_variant)
-                            for graph_variant in explode(graph)
-                        ]
-                    )
-                else:
-                    raise ValueError(
-                        f"'{generator}' is an unsupported argument for a graph generator. Use ['kagen', 'dummy'] instead."
-                    )
-            else:
-                raise ValueError(f"No generator defined for graph: {graph}.")
-            time_limit = graph.get("time_limit")
-            if time_limit:
-                time_limits[graph["name"]] = time_limit
+    inputs, time_limits = parse_graph_list(data["graphs"], instance_sets)
     if "executable" in data:
         executable = data["executable"]
     else:

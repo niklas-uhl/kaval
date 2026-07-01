@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+#
+# A stand-in "binary" for exercising kaval end-to-end without a real build.
+# It echoes the arguments it received and, if a --json_output_path is given,
+# writes a minimal JSON results file there so the full output-path handling
+# (directory naming, per-config files) is exercised too.
+#
+# Point a suite's `executable` at this script by name and run kaval with
+# BUILD_DIR set to its parent directory, e.g.:
+#
+#   BUILD_DIR=examples pipenv run python3 run-experiments.py test \
+#       --machine shared --search-dirs examples/suites --output-dir /tmp/kaval_test
+
+set -euo pipefail
+
+json_output_path=""
+args=("$@")
+for ((i = 0; i < ${#args[@]}; i++)); do
+    if [[ "${args[i]}" == "--json_output_path" ]]; then
+        json_output_path="${args[i + 1]-}"
+    fi
+done
+
+echo "test-app invoked with: $*"
+
+if [[ -n "$json_output_path" ]]; then
+    out="${json_output_path}.json"
+    mkdir -p "$(dirname "$out")"
+    printf '{"app": "test-app", "args": "%s", "result": "ok"}\n' "$*" > "$out"
+    echo "wrote results to $out"
+fi

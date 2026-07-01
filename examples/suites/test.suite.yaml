@@ -1,5 +1,5 @@
 name: test
-executable: /build/test_app
+executable: test-app # resolved under $BUILD_DIR; run with BUILD_DIR=examples
 ncores: [1, 64]
 time_limit: 61 # minutes
 seeds: [0, 1] # default: [0]
