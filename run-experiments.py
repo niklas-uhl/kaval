@@ -24,6 +24,7 @@
 
 from runners import *
 import expcore
+from expcore import parse_time_limit
 import argparse, os, sys
 from pathlib import Path
 
@@ -106,7 +107,10 @@ def main():
     parser.add_argument("--min-cores", default=None, type=int, help="Lower bound on core counts; overrides suite min_cores (default 1)")
     parser.add_argument("--cores", nargs="*", help="Override suite ncores with an explicit list of core counts or a special keyword: 'pow2' for powers of two (1,2,4,...), 'sqr' for square numbers (1,4,9,16,...), 'sqr-pow2' for powers of two that are also squares (1,4,16,64,...), 'node-size-pow2' for powers-of-two multiples of tasks_per_node")
     parser.add_argument(
-        "-t", "--time-limit", default=os.environ.get("TIME_LIMIT", None), type=int
+        "-t", "--time-limit",
+        default=parse_time_limit(os.environ["TIME_LIMIT"]) if "TIME_LIMIT" in os.environ else None,
+        type=parse_time_limit,
+        help="Time limit per job. Accepts minutes (number), 'H:MM', 'H:MM:SS', 'D-HH:MM:SS', or suffix style like '1h30m'.",
     )
 
     parser.add_argument("--test", action="store_true")
