@@ -57,6 +57,40 @@ def get_argument_type_from_str(arg_type: str) -> CLIArgumentType:
         sys.exit(1)
 
 
+def parse_time_limit(value):
+    """Parse a time limit to seconds.
+
+    Accepts:
+    - int or float, or a plain numeric string: interpreted as minutes
+    - suffix notation: combinations of d/h/m/s, e.g. "1h30m", "90m", "2h"
+    - colon-separated H:MM or H:MM:SS (hours:minutes[:seconds])
+    - SLURM day-prefix D-HH:MM:SS or D-HH:MM
+    """
+    if isinstance(value, (int, float)):
+        return int(value * 60)
+    s = str(value).strip()
+    try:
+        return int(float(s) * 60)
+    except ValueError:
+        pass
+    m = re.fullmatch(r'(\d+)-(\d+):(\d+)(?::(\d+))?', s)
+    if m:
+        d, h, mins, secs = m.groups()
+        return int(d) * 86400 + int(h) * 3600 + int(mins) * 60 + int(secs or 0)
+    m = re.fullmatch(r'(\d+):(\d+)(?::(\d+))?', s)
+    if m:
+        h, mins, secs = m.groups()
+        return int(h) * 3600 + int(mins) * 60 + int(secs or 0)
+    m = re.fullmatch(r'(?:(\d+(?:\.\d+)?)d)?(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)m)?(?:(\d+(?:\.\d+)?)s)?', s, re.IGNORECASE)
+    if m and any(g is not None for g in m.groups()):
+        d, h, mins, secs = (float(x) if x else 0.0 for x in m.groups())
+        return int(d * 86400 + h * 3600 + mins * 60 + secs)
+    raise ValueError(
+        f"Cannot parse time limit {value!r}. Use minutes (number), "
+        "'H:MM', 'H:MM:SS', 'D-HH:MM:SS', or suffix style like '1h30m'."
+    )
+
+
 def is_argument_flag_only(arg_type, arg_value):
     return arg_type == CLIArgumentType.FLAG and isinstance(arg_value, bool)
 
@@ -576,8 +610,8 @@ def parse_graph_list(graph_list, instance_sets=None, _seen=None, overrides=None)
         else:
             raise ValueError(f"No generator defined for graph: {graph}.")
         time_limit = graph.get("time_limit")
-        if time_limit:
-            time_limits[graph["name"]] = time_limit
+        if time_limit is not None:
+            time_limits[graph["name"]] = parse_time_limit(time_limit)
     return inputs, time_limits
 
 
@@ -648,7 +682,7 @@ def load_suite_from_yaml(path, instance_sets=None):
         inputs,
         configs,
         tasks_per_node=data.get("tasks_per_node"),
-        time_limit=data.get("time_limit"),
+        time_limit=parse_time_limit(data["time_limit"]) if "time_limit" in data else None,
         seeds=data.get("seeds", [0]),
         omit_seed=data.get("omit_seed", True),
         input_time_limit=time_limits,

@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from expcore import ExperimentSuite
+from expcore import ExperimentSuite, parse_time_limit
 import expcore
 from pathlib import Path
 import subprocess, sys, json, os
@@ -402,12 +402,12 @@ class SBatchRunner(BaseRunner):
                                 mpi_ranks=mpi_ranks,
                                 threads_per_rank=threads_per_rank,
                                 ranks_per_node=ranks_per_node,
-                                timeout=job_time_limit * 60,
+                                timeout=job_time_limit,
                             )
                             commands.append(cmd_string)
                 subs["commands"] = "\n".join(commands)
                 subs["time_string"] = time.strftime(
-                    format_duration(seconds=time_limit * 60)
+                    format_duration(seconds=time_limit)
                 )
                 job_script = template.substitute(subs)
                 job_file = self.job_output_directory / aggregate_jobname
