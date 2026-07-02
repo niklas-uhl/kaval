@@ -131,6 +131,18 @@ def main():
         action="store_true",
         help="Do not append a date suffix to the experiment data and output directories"
     )
+    parser.add_argument(
+        "--name",
+        help="Override the directory name for the suite. Errors if multiple suites would produce the same name.",
+    )
+    parser.add_argument(
+        "--prefix",
+        help="Prepend PREFIX_ to each suite's directory name.",
+    )
+    parser.add_argument(
+        "--suffix",
+        help="Append _SUFFIX to each suite's directory name (inserted before the date).",
+    )
 
     args = parser.parse_args()
     suites = load_suites(args.suite_files, args.search_dirs)
@@ -144,13 +156,30 @@ def main():
         sys.exit(0)
 
     if not args.suite:
-        args.suite = suites.keys()
+        args.suite = list(suites.keys())
 
-    for suitename in args.suite:
+    def effective_name(suite_name):
+        if args.name:
+            return args.name
+        name = suite_name
+        if args.prefix:
+            name = args.prefix + "_" + name
+        if args.suffix:
+            name = name + "_" + args.suffix
+        return name
+
+    active_suites = [s for s in args.suite if suites.get(s)]
+    names = [effective_name(s) for s in active_suites]
+    seen, dupes = set(), set()
+    for n in names:
+        (dupes if n in seen else seen).add(n)
+    if dupes:
+        sys.exit(f"Error: --name/--prefix/--suffix would produce duplicate directory names: {sorted(dupes)}")
+
+    for suitename in active_suites:
         suite = suites.get(suitename)
-        if suite:
-            runner = get_runner(args, suite)
-            runner.execute(suite)
+        runner = get_runner(args, suite, name_override=effective_name(suitename))
+        runner.execute(suite)
 
 
 if __name__ == "__main__":

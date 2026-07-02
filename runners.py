@@ -680,13 +680,14 @@ def _expand_cores_override(args, suite):
     return _expand_cores_tokens(args.cores, min_cores, max_cores, tpn)
 
 
-def get_runner(args, suite):
+def get_runner(args, suite, name_override=None):
     # print("type: ", suite.suite_type)
+    suite_name = name_override or suite.name
     date_suffix = not getattr(args, "no_date_suffix", False)
     min_cores, max_cores = _resolve_cores_bounds(args, suite)
     if args.machine == "shared":
         runner = SharedMemoryRunner(
-            suite.name,
+            suite_name,
             suite.output_path_option_name,
             max_cores,
             args.experiment_data_dir,
@@ -704,7 +705,7 @@ def get_runner(args, suite):
 
     elif args.machine in "supermuc":
         runner = SuperMUCRunner(
-            suite.name,
+            suite_name,
             suite.output_path_option_name,
             args.experiment_data_dir,
             args.machine,
@@ -724,7 +725,7 @@ def get_runner(args, suite):
         )
     elif args.machine in "horeka":
         runner = HorekaRunner(
-            suite.name,
+            suite_name,
             suite.output_path_option_name,
             args.experiment_data_dir,
             args.machine,
@@ -744,7 +745,7 @@ def get_runner(args, suite):
         )
     elif args.machine == "generic-job-file":
         runner = GenericDistributedMemoryRunner(
-            suite.name,
+            suite_name,
             suite.output_path_option_name,
             args.experiment_data_dir,
             args.machine,
