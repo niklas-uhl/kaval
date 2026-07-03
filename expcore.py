@@ -595,23 +595,21 @@ def parse_graph_list(graph_list, instance_sets=None, _seen=None, overrides=None)
             graph.update(copy.deepcopy(overrides))
         if "generator" in graph:
             generator = graph.pop("generator")
+            time_limit_val = graph.pop("time_limit", None)
             if generator == "kagen":
-                inputs.extend(
-                    [KaGenGraph(**graph_variant) for graph_variant in explode(graph)]
-                )
+                new_inputs = [KaGenGraph(**graph_variant) for graph_variant in explode(graph)]
             elif generator == "dummy":
-                inputs.extend(
-                    [DummyInstance(**graph_variant) for graph_variant in explode(graph)]
-                )
+                new_inputs = [DummyInstance(**graph_variant) for graph_variant in explode(graph)]
             else:
                 raise ValueError(
                     f"'{generator}' is an unsupported argument for a graph generator. Use ['kagen', 'dummy'] instead."
                 )
+            inputs.extend(new_inputs)
+            if time_limit_val is not None:
+                for inp in new_inputs:
+                    time_limits[inp.name] = parse_time_limit(time_limit_val)
         else:
             raise ValueError(f"No generator defined for graph: {graph}.")
-        time_limit = graph.get("time_limit")
-        if time_limit is not None:
-            time_limits[graph["name"]] = parse_time_limit(time_limit)
     return inputs, time_limits
 
 
