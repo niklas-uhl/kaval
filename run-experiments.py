@@ -127,6 +127,13 @@ def main():
         help="Cleans the experiment data directory before starting the experiment"
     )
     parser.add_argument(
+        "--copy-binary",
+        action="store_true",
+        help="Copy the suite's executable into <experiment-dir>/bin and point all "
+        "generated commands/job files at the copy, so later rebuilds of the "
+        "binary don't change what the generated jobs execute."
+    )
+    parser.add_argument(
         "--no-date-suffix",
         action="store_true",
         help="Do not append a date suffix to the experiment data and output directories"
