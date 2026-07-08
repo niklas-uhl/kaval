@@ -789,14 +789,33 @@ def params_to_args(params):
     return args
 
 
-def command(
-    binary_name, binary_path, input, mpi_ranks, threads_per_rank, escape, **kwargs
-):
+def resolve_executable(binary_name, binary_path="."):
+    """Resolve the on-disk path of a suite's executable.
+
+    The binary is looked up under ``BUILD_DIR`` (defaulting to ``../build/``
+    relative to this script), i.e. ``BUILD_DIR / binary_path / binary_name``.
+    """
     script_path = os.path.dirname(__file__)
     build_dir = Path(
         os.environ.get("BUILD_DIR", os.path.join(script_path, "../build/"))
     )
-    app = build_dir / binary_path / binary_name
+    return build_dir / binary_path / binary_name
+
+
+def command(
+    binary_name,
+    binary_path,
+    input,
+    mpi_ranks,
+    threads_per_rank,
+    escape,
+    binary_override_path=None,
+    **kwargs,
+):
+    if binary_override_path is not None:
+        app = Path(binary_override_path)
+    else:
+        app = resolve_executable(binary_name, binary_path)
     command = [str(app)]
     if input:
         if isinstance(input, InputGraph):

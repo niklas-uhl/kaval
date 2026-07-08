@@ -83,6 +83,34 @@ class BaseRunner:
         self.tasks_per_node = None
         self.suite_name = suite_name
         self.output_path_option_name = output_path_option_name
+        # Absolute path to a copied executable to invoke instead of the one under
+        # BUILD_DIR; set by prepare_binary() when --copy-binary is used, else None.
+        self.binary_override_path = None
+
+    def prepare_binary(self, suite: ExperimentSuite):
+        """Snapshot the suite's executable into the experiment directory.
+
+        The resolved executable is copied into ``<experiment-dir>/bin`` and
+        :attr:`binary_override_path` is set to that copy, so every generated
+        command/job file invokes the copied binary rather than the (possibly
+        later rebuilt) one under ``BUILD_DIR``. Called from :func:`get_runner`
+        only when ``--copy-binary`` is given; a no-op if the suite has no
+        executable.
+        """
+        if not suite.executable:
+            return
+        source = expcore.resolve_executable(suite.executable)
+        if not source.exists():
+            raise RuntimeError(
+                f"--copy-binary: executable not found at {source}. "
+                "Is BUILD_DIR set correctly and the binary built?"
+            )
+        bin_dir = self.experiment_data_directory / "bin"
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        dest = bin_dir / source.name
+        shutil.copy2(source, dest)  # copy2 preserves the executable bit
+        self.binary_override_path = str(dest.resolve())
+        print(f"Copied binary {source} -> {self.binary_override_path}")
 
     def dump_config(self, experiment_suite: ExperimentSuite):
         with open(self.output_directory / "config.json", "w") as file:
@@ -115,6 +143,7 @@ class BaseRunner:
             mpi_ranks,
             threads_per_rank,
             escape=True,
+            binary_override_path=self.binary_override_path,
             **config,
         )
         return cmd
@@ -701,6 +730,8 @@ def get_runner(args, suite, name_override=None):
         runner.max_cores = max_cores
         runner.min_cores = min_cores
         runner.override_cores = _expand_cores_override(args, suite)
+        if getattr(args, "copy_binary", False):
+            runner.prepare_binary(suite)
         return runner
 
     elif args.machine in "supermuc":
@@ -769,4 +800,6 @@ def get_runner(args, suite, name_override=None):
     runner.max_cores = max_cores
     runner.min_cores = min_cores
     runner.override_cores = _expand_cores_override(args, suite)
+    if getattr(args, "copy_binary", False):
+        runner.prepare_binary(suite)
     return runner
