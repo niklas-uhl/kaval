@@ -1,1 +1,1 @@
-mpiexec -n ${mpi_ranks} ${cmd}
+${env} mpiexec -n ${mpi_ranks} ${cmd}
