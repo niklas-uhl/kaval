@@ -657,9 +657,9 @@ def load_suite_from_yaml(path, instance_sets=None):
         configs = [dict()]
     elif type(data["config"]) == list:
         for config in data["config"]:
-            configs = configs + explode(config)
+            configs = configs + explode_with_env(config)
     else:
-        configs = explode(data["config"])
+        configs = explode_with_env(data["config"])
     inputs, time_limits = parse_graph_list(data["graphs"], instance_sets)
     inputs = dedup_inputs(inputs)
     if "executable" in data:
@@ -728,6 +728,32 @@ def is_list_of_list(val):
         if not isinstance(x, list):
             return False
     return True
+
+
+ENV_KEY = "ENV"
+
+
+def explode_with_env(config):
+    """Explode a config entry, treating ``ENV`` as a peer dimension.
+
+    The env mapping must be popped before ``explode()`` sees it: it is not a CLI
+    argument, and ``for_each_argument`` would read it as a typed argument and
+    fail looking up ``["type"]``. Values may be lists, so the mapping is run
+    through ``explode()`` on its own and crossed with the config variants.
+    """
+    config = config.copy()
+    env = config.pop(ENV_KEY, {})
+    if not env:
+        # keep configs (and thus config.json) untouched when the key is unused
+        return explode(config)
+    env_variants = explode(env)
+    exploded = []
+    for cfg in explode(config):
+        for env_variant in env_variants:
+            variant = cfg.copy()
+            variant[ENV_KEY] = env_variant.copy()
+            exploded.append(variant)
+    return exploded
 
 
 def explode(config):

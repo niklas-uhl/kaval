@@ -21,3 +21,6 @@ config:
       type: positional_list
       value: [["local", 300], ["randomized", 150]] # results in 2x configurations: "local" 300, "global" 700
     boost: [True, False] # results 2x configurations: --boost, ""
+    ENV: # reserved key: set before mpiexec, never passed to the binary
+      I_MPI_PIN: 1
+      I_MPI_ADJUST_ALLREDUCE: [1, 7] # 2x configurations

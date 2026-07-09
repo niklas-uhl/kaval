@@ -1,6 +1,6 @@
 echo "[LOG] Starting ${jobname}"
 start=$$(date +%s.%N)
-mpiexec -n ${mpi_ranks} ${cmd}
+${env} mpiexec -n ${mpi_ranks} ${cmd}
 end=$$(date +%s.%N)
 diff=$$(echo "$$end - $$start" | bc)
 echo "[LOG] Finished ${jobname} in $${diff} seconds"

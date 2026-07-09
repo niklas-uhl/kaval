@@ -23,7 +23,7 @@
 from expcore import ExperimentSuite, parse_time_limit
 import expcore
 from pathlib import Path
-import subprocess, sys, json, os
+import subprocess, sys, json, os, shlex
 import math as m
 from string import Template
 import time
@@ -119,6 +119,14 @@ class BaseRunner:
                 c["idx"] = i
             json.dump(configs, file, indent=4)
 
+    def extract_env(self, config):
+        """Pop the reserved env key off a config and render it as a shell prefix.
+
+        Returns an empty string when no environment variables are set.
+        """
+        env = config.pop(expcore.ENV_KEY, {})
+        return " ".join(f"{key}={shlex.quote(str(val))}" for key, val in env.items())
+
     def make_cmd_for_config(
         self,
         suite: ExperimentSuite,
@@ -132,6 +140,7 @@ class BaseRunner:
     ):
         json_output_prefix_path = self.output_directory / config_job_name
         config = config.copy()
+        env_variables = self.extract_env(config)
         if not self.omit_output_path:
             config[self.output_path_option_name] = str(json_output_prefix_path)
         if not self.omit_seed:
@@ -146,7 +155,7 @@ class BaseRunner:
             binary_override_path=self.binary_override_path,
             **config,
         )
-        return cmd
+        return cmd, env_variables
 
     def execute(self, experiment_suite: ExperimentSuite):
         raise NotImplementedError("Please implement this method.")
@@ -259,7 +268,7 @@ class SharedMemoryRunner(BaseRunner):
                                 self.output_directory / f"{config_job_name}-error-log.txt"
                             )
 
-                            cmd = self.make_cmd_for_config(
+                            cmd, env_variables = self.make_cmd_for_config(
                                 experiment_suite,
                                 input,
                                 config_job_name,
@@ -271,6 +280,7 @@ class SharedMemoryRunner(BaseRunner):
                             )
                             cmd_string = command_template.substitute(
                                 cmd=" ".join(cmd), mpi_ranks=mpi_ranks, threads_per_rank=threads_per_rank,
+                                env=env_variables,
                             )
                             print(
                                 f"Running config {i} on {input.name} using {mpi_ranks} ranks and {threads_per_rank} threads per rank ... ",
@@ -415,7 +425,7 @@ class SBatchRunner(BaseRunner):
                             config_jobname = self.jobname(
                                 iinput, input, mpi_ranks, threads_per_rank, i, seed=seed
                             )
-                            cmd = self.make_cmd_for_config(
+                            cmd, env_variables = self.make_cmd_for_config(
                                 experiment_suite,
                                 input,
                                 config_jobname,
@@ -432,6 +442,7 @@ class SBatchRunner(BaseRunner):
                                 threads_per_rank=threads_per_rank,
                                 ranks_per_node=ranks_per_node,
                                 timeout=job_time_limit,
+                                env=env_variables,
                             )
                             commands.append(cmd_string)
                 subs["commands"] = "\n".join(commands)
