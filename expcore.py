@@ -126,54 +126,24 @@ class InputGraph:
         return self.name
 
 
-class FileInputGraph(InputGraph):
-    def __init__(self, name, path, format="metis"):
-        self._name = slugify.slugify(name)
-        self.path = path
-        self.format = format
-        self.partitions = {}
-        self.partitioned = False
+_ENV_VAR_RE = re.compile(r'\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*')
 
-    def args(self, mpi_ranks, threads_per_rank, escape):
-        # file_args = [str(self.path), "--input-format", self.format]
-        file_args = ["--graphtype", "BRAIN", "--infile_dir", str(self.path)]
-        if self.partitioned and mpi_ranks > 1:
-            partition_file = self.partitions.get(mpi_ranks, None)
-            if not partition_file:
-                logging.error(
-                    f"Could not load partitioning for p={mpi_ranks} for input {self.name}"
-                )
-                sys.exit(1)
-            file_args += ["--partitioning", partition_file]
-        return file_args
 
-    def add_partitions(self, partitions):
-        self.partitions.update(partitions)
+def expand_env_vars_or_raise(value):
+    """Expand $VAR/${VAR} references in `value` via os.path.expandvars.
 
-    @property
-    def name(self):
-        if self.partitioned:
-            return self._name + "_partitioned"
-        else:
-            return self._name
-
-    @name.setter
-    def name(self, value):
-        self._name = value
-
-    def exists(self):
-        if self.format == "metis":
-            return self.path.exists()
-        elif self.format == "binary":
-            root = self.path.parent
-            first_out = root / (self.path.stem + ".first_out")
-            head = root / (self.path.stem + ".head")
-            return first_out.exists() and head.exists()
-        elif self.format == "brain_format":
-            return True
-
-    def __repr__(self):
-        return f"FileInputGraph({self.name, self.path, self.format, self.partitioned, self.partitions})"
+    Raises ValueError if a reference is left unresolved (i.e. the env var is
+    unset), so the problem surfaces as a suite-load error instead of a literal
+    '$VAR' ending up in a generated sbatch script.
+    """
+    expanded = os.path.expandvars(value)
+    m = _ENV_VAR_RE.search(expanded)
+    if m:
+        raise ValueError(
+            f"Unresolved environment variable {m.group(0)!r} in root {value!r}. "
+            "Set it in the environment before loading suites."
+        )
+    return expanded
 
 
 def stringify_params(params):
@@ -219,6 +189,9 @@ class KaGenGraph(InputGraph):
         kwargs.pop("scale_weak", False)
         kwargs.pop("extra_args", None)
         kwargs.pop("extra_args_scale_weak", None)
+        self.graph_name = kwargs.pop("graph_name", None)
+        root = kwargs.pop("root", None)
+        self.root = expand_env_vars_or_raise(root) if root is not None else None
         self.params = kwargs
 
     def parse_scale_weak_params(self, kwargs):
@@ -292,6 +265,11 @@ class KaGenGraph(InputGraph):
 
     def preprocess_file_based_graphs_params(self, mpi_ranks):
         params = self.params.copy()
+        file_types = ("file", "partitioned_file", "partitioned-file")
+        if self.root and params.get("type") in file_types and "filename" in params:
+            filename = params["filename"]
+            if not os.path.isabs(filename):
+                params["filename"] = os.path.join(self.root, filename)
         if params.get("type") not in ["partitioned_file", "partitioned-file"]:
             return params
         try:
@@ -332,7 +310,10 @@ class KaGenGraph(InputGraph):
             params.append(f"n={int(math.log2(self.n))}")
         if self.m:
             params.append(f"m={int(math.log2(self.m))}")
-        params += stringify_params(self.params)
+        name_params = self.params
+        if self.graph_name and "filename" in self.params:
+            name_params = {**self.params, "filename": self.graph_name}
+        params += stringify_params(name_params)
         if self.scale_weak:
             params.append("weak")
         # include extra_args compactly
@@ -350,7 +331,10 @@ class KaGenGraph(InputGraph):
 
     @property
     def short_name(self):
-        name = f"{self.params['type']}"
+        if self.graph_name and "filename" in self.params:
+            name = self.graph_name
+        else:
+            name = f"{self.params['type']}"
         if self.n:
             name += f"_n={int(math.log2(self.n))}"
         return slugify.slugify(name)
@@ -489,30 +473,6 @@ class ExperimentSuite:
 
     def get_input_time_limit(self, input_name):
         return self.input_time_limit.get(input_name, self.time_limit)
-
-    def load_inputs(self, input_dict, partitions):
-        inputs_new = []
-        for graph in self.inputs:
-            if isinstance(graph, str):
-                graph = {"name": graph, "partitioned": False}
-            elif isinstance(graph, tuple):
-                graph_name, partitioned = graph
-                graph = {"name": graph_name, "partitioned": partitioned}
-            else:
-                inputs_new.append(graph)
-                continue
-            input = copy.copy(input_dict.get(graph["name"]))
-            if not input:
-                logging.warn(f"Could not load input for {graph_name}")
-                continue
-            if graph["partitioned"]:
-                input.add_partitions(partitions.get(graph["name"], {}))
-                input.partitioned = graph["partitioned"]
-            # print(input)
-            inputs_new.append(input)
-
-        self.inputs = inputs_new
-        # print(self.inputs)
 
     def __repr__(self):
         return f"ExperimentSuite({self.name}, {self.cores}, {self.inputs}, {self.configs}, {self.time_limit}, {self.input_time_limit})"

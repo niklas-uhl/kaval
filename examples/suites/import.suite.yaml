@@ -2,8 +2,9 @@ name: import-example
 executable: test-app # resolved under $BUILD_DIR; run with BUILD_DIR=examples
 ncores: [1, 64]
 graphs:
-  - import: common-graphs   # pulls in every graph from common.instances.yaml
-  - generator: kagen        # inline graphs can be mixed in freely
+  - import: common-graphs      # pulls in every graph from common.instances.yaml
+  - import: real-world-graphs  # pulls in the on-disk graph registry
+  - generator: kagen           # inline graphs can be mixed in freely
     type: rgg2d
     N: 24
 config:
