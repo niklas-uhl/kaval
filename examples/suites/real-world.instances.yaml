@@ -1,0 +1,22 @@
+# A registry of on-disk graphs, named once via `graph_name` and referenced by
+# suites through the normal import mechanism. `root` is a directory prefix
+# joined onto a relative `filename` when the command is built (not at parse
+# time), so it stays overridable via `with:` and supports env-var expansion
+# (e.g. `root: ${GRAPH_ROOT}`) for per-cluster dataset locations (same
+# indirection pattern as BUILD_DIR) -- kept as a literal path here so this
+# example runs out of the box without requiring an external env var; see
+# CLAUDE.md for the env-var form.
+name: real-world-graphs
+graphs:
+  - generator: kagen
+    type: file
+    graph_name: example-graph-a
+    root: examples/graphs
+    filename: graph-a.graph   # placeholder; not read by examples/test-app
+    input_format: metis
+  - generator: kagen
+    type: file
+    graph_name: example-graph-b
+    root: examples/graphs
+    filename: graph-b.graph
+    input_format: metis

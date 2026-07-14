@@ -1,0 +1,15 @@
+# Demonstrates the `inputs:` key (alias for `graphs:`) and `generator: generic`
+# (alias for the legacy `dummy` name) -- for suites whose inputs aren't graphs,
+# e.g. a string-sorting benchmark. See test.suite.yaml for the graphs:/dummy
+# spelling, which still works unchanged.
+name: generic-input-example
+executable: test-app # resolved under $BUILD_DIR; run with BUILD_DIR=examples
+ncores: [1, 64]
+inputs:
+  - generator: generic
+    name: strings
+    string-generator: 1
+    len-strings: 500
+    num-strings: [10000, 100000]
+config:
+  num-iterations: [5]
