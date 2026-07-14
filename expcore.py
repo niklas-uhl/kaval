@@ -177,7 +177,7 @@ class KaGenGraph(InputGraph):
             self.m = kwargs.get("m", 1 << int(kwargs["M"]))
         except (TypeError, KeyError):
             self.m = None
-        # handle extra_args similar to DummyInstance
+        # handle extra_args similar to GenericInstance
         self.extra_args = kwargs.get("extra_args", {})
         self.parse_scale_weak_params({"scale_weak": kwargs.get("extra_args_scale_weak")})
         # cleanup consumed keys
@@ -340,7 +340,7 @@ class KaGenGraph(InputGraph):
         return slugify.slugify(name)
 
 
-class DummyInstance(InputGraph):
+class GenericInstance(InputGraph):
     def __init__(self, **kwargs):
         self.name_ = kwargs["name"]
         # deep copy so nested param structures are not aliased across variants
@@ -478,13 +478,31 @@ class ExperimentSuite:
         return f"ExperimentSuite({self.name}, {self.cores}, {self.inputs}, {self.configs}, {self.time_limit}, {self.input_time_limit})"
 
 
+def get_input_list(data, context=""):
+    """Look up a suite/instance-set's input list under ``graphs`` or ``inputs``.
+
+    ``graphs`` is the original, still-primary key; ``inputs`` is an alias for
+    suites whose inputs aren't graphs (e.g. string-sorting instances) and would
+    read oddly under ``graphs``. Both name the same list format. Specifying
+    both is ambiguous and rejected. Returns ``None`` if neither key is present.
+    """
+    if "graphs" in data and "inputs" in data:
+        where = f" in {context}" if context else ""
+        raise ValueError(f"Specify only one of 'graphs' or 'inputs'{where}, not both.")
+    if "graphs" in data:
+        return data["graphs"]
+    if "inputs" in data:
+        return data["inputs"]
+    return None
+
+
 def load_instance_sets(search_paths):
     """Discover reusable instance sets from ``*.instances.yaml`` files.
 
-    Each such file defines a named set of graphs (same format as a suite's
-    ``graphs`` list) via a top-level ``name`` and ``graphs`` key. The returned
-    dict maps set name to its raw graph list, ready to be spliced into a suite
-    that imports it.
+    Each such file defines a named set of inputs (same format as a suite's
+    ``graphs``/``inputs`` list) via a top-level ``name`` and ``graphs`` (or
+    ``inputs``) key. The returned dict maps set name to its raw input list,
+    ready to be spliced into a suite that imports it.
     """
     instance_sets = {}
     for path in search_paths:
@@ -495,10 +513,13 @@ def load_instance_sets(search_paths):
                 continue
             with open(os.path.join(path, file), "r") as f:
                 data = yaml.safe_load(f)
-            if not data or "graphs" not in data:
+            if not data:
+                continue
+            input_list = get_input_list(data, file)
+            if input_list is None:
                 continue
             name = data.get("name", file[: -len(".instances.yaml")])
-            instance_sets[name] = data["graphs"]
+            instance_sets[name] = input_list
     return instance_sets
 
 
@@ -558,11 +579,11 @@ def parse_graph_list(graph_list, instance_sets=None, _seen=None, overrides=None)
             time_limit_val = graph.pop("time_limit", None)
             if generator == "kagen":
                 new_inputs = [KaGenGraph(**graph_variant) for graph_variant in explode(graph)]
-            elif generator == "dummy":
-                new_inputs = [DummyInstance(**graph_variant) for graph_variant in explode(graph)]
+            elif generator in ("generic", "dummy"):
+                new_inputs = [GenericInstance(**graph_variant) for graph_variant in explode(graph)]
             else:
                 raise ValueError(
-                    f"'{generator}' is an unsupported argument for a graph generator. Use ['kagen', 'dummy'] instead."
+                    f"'{generator}' is an unsupported input generator. Use ['kagen', 'generic'] instead."
                 )
             inputs.extend(new_inputs)
             if time_limit_val is not None:
@@ -577,7 +598,7 @@ def _input_key(graph):
     """Identity of an input for deduplication.
 
     Two inputs are considered the same run if they produce the same name:
-    ``KaGenGraph``/``DummyInstance`` names are derived from all their params,
+    ``KaGenGraph``/``GenericInstance`` names are derived from all their params,
     and bare file references are just their string.
     """
     if isinstance(graph, InputGraph):
@@ -620,7 +641,10 @@ def load_suite_from_yaml(path, instance_sets=None):
             configs = configs + explode_with_env(config)
     else:
         configs = explode_with_env(data["config"])
-    inputs, time_limits = parse_graph_list(data["graphs"], instance_sets)
+    input_list = get_input_list(data, path)
+    if input_list is None:
+        raise ValueError(f"Suite '{path}' is missing a 'graphs' (or 'inputs') list.")
+    inputs, time_limits = parse_graph_list(input_list, instance_sets)
     inputs = dedup_inputs(inputs)
     if "executable" in data:
         executable = data["executable"]

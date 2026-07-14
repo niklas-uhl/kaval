@@ -40,7 +40,7 @@ BUILD_DIR=examples pipenv run python3 run-experiments.py test --machine shared -
 
 **`expcore.py`** — experiment model:
 - `ExperimentSuite` — loads and validates a `.suite.yaml` file
-- `KaGenGraph`, `DummyInstance` — input graph abstractions (KaGen-generated or file-based, or placeholder)
+- `KaGenGraph`, `GenericInstance` — input abstractions (KaGen-generated/file-based, or a generic pass-through of arbitrary CLI params for any other binary, e.g. a string generator)
 - `CLIArgumentType` — enum controlling how arguments are passed to the binary (`FLAGS`, `POSITIONAL`, `POSITIONAL_LIST`, `FLAG_LIST`)
 - Parameter expansion: YAML config lists are exploded into individual runs via cartesian product
 
@@ -57,10 +57,12 @@ BUILD_DIR=examples pipenv run python3 run-experiments.py test --machine shared -
 - `sbatch-templates/` — SLURM job script skeletons per cluster
 
 ### Suite YAML format
-See `examples/suites/test.suite.yaml` for a working example. Top-level keys include `executable`, `cores`, `seeds`, `graphs`, and `configurations`. Configurations support weak-scaling via `weak_scaling_graphs`.
+See `examples/suites/test.suite.yaml` for a working example. Top-level keys include `executable`, `cores`, `seeds`, `graphs` (or `inputs` — an alias; kaval is used for non-graph experiments too, e.g. string sorting, where `inputs` reads more naturally), and `configurations`. Configurations support weak-scaling via `weak_scaling_graphs`.
+
+Each `graphs`/`inputs` entry picks a generator via `generator: kagen | generic`. `generic` (`dummy` also still accepted, as a legacy alias) passes its remaining keys straight through as CLI params to `executable` — the mechanism for any generator that isn't KaGen (e.g. a colleague's string generator), not a placeholder despite the old name. See `examples/suites/generic-input.suite.yaml` for the `inputs:`/`generic` spelling.
 
 ### Reusable instance sets
-To avoid repeating the same graphs across suites, define them once in a `*.instances.yaml` file (auto-discovered in `--search-dirs`, alongside `.suite.yaml` files). Each such file has a top-level `name` and a `graphs` list in the same format as a suite's `graphs`. A suite pulls a set in via an `import` entry in its own `graphs` list, and can mix imported sets with inline graphs:
+To avoid repeating the same inputs across suites, define them once in a `*.instances.yaml` file (auto-discovered in `--search-dirs`, alongside `.suite.yaml` files). Each such file has a top-level `name` and a `graphs`/`inputs` list in the same format as a suite's. A suite pulls a set in via an `import` entry in its own `graphs`/`inputs` list, and can mix imported sets with inline graphs:
 
 ```yaml
 # common.instances.yaml
