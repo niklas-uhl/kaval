@@ -37,10 +37,10 @@ import slugify
 
 
 class CLIArgumentType(Enum):
-    FLAG = ("flag",)
+    FLAG = "flag"
     POSITIONAL = "positional"
     POSITIONAL_LIST = "positional_list"
-    FLAG_LIST = "positional_list"
+    FLAG_LIST = "flag_list"
 
 
 def get_argument_type_from_str(arg_type: str) -> CLIArgumentType:
@@ -265,12 +265,12 @@ class KaGenGraph(InputGraph):
 
     def preprocess_file_based_graphs_params(self, mpi_ranks):
         params = self.params.copy()
-        file_types = ("file", "partitioned_file", "partitioned-file")
+        file_types = ("file", "partitioned_file")
         if self.root and params.get("type") in file_types and "filename" in params:
             filename = params["filename"]
             if not os.path.isabs(filename):
                 params["filename"] = os.path.join(self.root, filename)
-        if params.get("type") not in ["partitioned_file", "partitioned-file"]:
+        if params.get("type") != "partitioned_file":
             return params
         try:
             filename = params.get("filename")
@@ -285,7 +285,7 @@ class KaGenGraph(InputGraph):
         )
         params["filename"] = extended_filename
         params["distribution"] = "explicit"
-        params["explicit-distribution"] = extended_filename + ".partitions"
+        params["explicit_distribution"] = extended_filename + ".partitions"
         return params
 
     def args(self, mpi_ranks, threads_per_rank, escape):
