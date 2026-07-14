@@ -102,14 +102,16 @@ A `with:` on a bare-string file input can't be applied — it is logged and the 
 - `graph_name` — a friendly handle used as the file-identifying part of both `.name` (the dedup/time-limit key) and `.short_name` (output-directory naming), instead of the raw `filename`. Without it, every `type: file` graph's `short_name` collapses to the literal string `file`, colliding across any suite with multiple real-world graphs.
 - `root` — an optional directory prefix. When `filename` is relative, it's joined onto `root` when the command is built, not when the YAML is parsed — so `root` remains a normal, overridable param through `with:`. `root` also expands `$VAR`/`${VAR}` references, so a checked-in registry works unmodified across clusters that each set the referenced variable (e.g. `GRAPH_ROOT`) via their existing environment setup, mirroring how `BUILD_DIR` locates the executable per-machine. An unset variable raises a `ValueError` when the suite loads, rather than embedding a literal `$GRAPH_ROOT` in a generated sbatch script.
 
+A `*.instances.yaml` file may also set a top-level `root:`, applied as a default to every `generator: kagen` entry in that file that has a `filename` and doesn't already set its own `root` — so a registry of many file-based graphs doesn't need `root` repeated on each one. It's skipped for `import` entries and non-file graphs mixed into the same file, so those never inherit a root/env-var requirement they don't need; an entry's own `root`, or a `with: {root: ...}` override at the import site, still wins over the file-level default. Implemented in `expcore.apply_default_root()`, applied in `load_instance_sets()`.
+
 ```yaml
 # real-world.instances.yaml
 name: real-world-graphs
+root: ${GRAPH_ROOT}   # default for every graph below that doesn't set its own root
 graphs:
   - generator: kagen
     type: file
     graph_name: example-graph
-    root: ${GRAPH_ROOT}
     filename: example-graph.graph
 ```
 ```yaml
@@ -117,7 +119,7 @@ graphs:
 graphs:
   - import: real-world-graphs
     with:
-      root: /scratch/other-graphs   # override for one run
+      root: /scratch/other-graphs   # override for one run, beats the file-level default
 ```
 
 See `examples/suites/common.instances.yaml`, `examples/suites/real-world.instances.yaml`, and `examples/suites/import.suite.yaml`. Parsing lives in `expcore.load_instance_sets()` (discovery) and `expcore.parse_graph_list()` (expansion, incl. imports and `with:` overrides); dedup is `expcore.dedup_inputs()`, applied in `load_suite_from_yaml()`.
