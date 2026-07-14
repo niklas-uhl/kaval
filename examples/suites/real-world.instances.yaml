@@ -6,17 +6,19 @@
 # indirection pattern as BUILD_DIR) -- kept as a literal path here so this
 # example runs out of the box without requiring an external env var; see
 # CLAUDE.md for the env-var form.
+#
+# A top-level `root:` (below) applies to every file-based graph in this file
+# that doesn't set its own `root`, so it doesn't need repeating per entry.
 name: real-world-graphs
+root: examples/graphs
 graphs:
   - generator: kagen
     type: file
     graph_name: example-graph-a
-    root: examples/graphs
     filename: graph-a.graph   # placeholder; not read by examples/test-app
     input_format: metis
   - generator: kagen
     type: file
     graph_name: example-graph-b
-    root: examples/graphs
     filename: graph-b.graph
     input_format: metis

@@ -518,9 +518,35 @@ def load_instance_sets(search_paths):
             input_list = get_input_list(data, file)
             if input_list is None:
                 continue
+            default_root = data.get("root")
+            if default_root is not None:
+                input_list = apply_default_root(input_list, default_root)
             name = data.get("name", file[: -len(".instances.yaml")])
             instance_sets[name] = input_list
     return instance_sets
+
+
+def apply_default_root(graph_list, default_root):
+    """Apply an instance-set-file-level default ``root`` to its file-based graphs.
+
+    Only entries that look like on-disk KaGen graphs (``generator: kagen`` with
+    a ``filename``) and don't already set their own ``root`` are touched, so a
+    synthetic graph mixed into the same file, or a further ``import`` entry,
+    never inherits a root/env-var requirement it doesn't need. An entry's own
+    ``root``, or a use-site ``with: {root: ...}`` override at the import site,
+    still takes precedence over this default.
+    """
+    result = []
+    for graph in graph_list:
+        if (
+            isinstance(graph, dict)
+            and graph.get("generator") == "kagen"
+            and "filename" in graph
+            and "root" not in graph
+        ):
+            graph = {**graph, "root": default_root}
+        result.append(graph)
+    return result
 
 
 def parse_graph_list(graph_list, instance_sets=None, _seen=None, overrides=None):
