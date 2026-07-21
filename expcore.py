@@ -394,7 +394,7 @@ class GenericInstance(InputGraph):
                 if self.do_scale_parameter(arg_key):
                     param += " " + " ".join(
                         [
-                            f'"{self.get_scaled_arg_value(arg_key, val, p)}"'
+                            f'"{self.get_scaled_value(arg_key, val, p)}"'
                             for val in arg_value
                         ]
                     )
