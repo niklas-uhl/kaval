@@ -330,6 +330,7 @@ class SBatchRunner(BaseRunner):
         omit_seed=False,
         fresh=False,
         date_suffix=True,
+        group_configs=True,
     ):
         BaseRunner.__init__(
             self,
@@ -355,6 +356,11 @@ class SBatchRunner(BaseRunner):
         self.module_restore_cmd = module_restore_cmd
         self.time_limit = time_limit
         self.use_test_partition = use_test_partition
+        # When True (default), every config/seed/thread combination for a given
+        # (input, ncores) is packed into a single job file as multiple mpiexec
+        # invocations. When False, each combination gets its own job file with
+        # exactly one mpiexec invocation.
+        self.group_configs = group_configs
         if not sbatch_template:
             sbatch_template = self.default_sbatch_template()
         self.sbatch_template = sbatch_template
@@ -388,26 +394,20 @@ class SBatchRunner(BaseRunner):
                     tasks_per_node = self.tasks_per_node
 
                 aggregate_jobname = self.jobname(iinput, input, cores=ncores)
-                instance_name = self.config_name(iinput, input, cores=ncores)
-                log_path = self.output_directory / f"{instance_name}-log.txt"
-                err_log_path = self.output_directory / f"{instance_name}-err.txt"
-                subs = {}
+                base_subs = {}
                 nodes = self.required_nodes(ncores, tasks_per_node)
-                subs["nodes"] = nodes
-                subs["ntasks"] = ncores
-                subs["ntasks_per_node"] = tasks_per_node
-                subs["output_log"] = str(log_path)
-                subs["error_output_log"] = str(err_log_path)
-                subs["job_name"] = aggregate_jobname
-                subs["job_queue"] = self.get_queue(
+                base_subs["nodes"] = nodes
+                base_subs["ntasks"] = ncores
+                base_subs["ntasks_per_node"] = tasks_per_node
+                base_subs["job_queue"] = self.get_queue(
                     ncores, tasks_per_node, self.use_test_partition
                 )
-                subs["islands"] = self.required_islands(nodes)
-                subs["account"] = project
+                base_subs["islands"] = self.required_islands(nodes)
+                base_subs["account"] = project
                 if self.module_config:
-                    subs["module_setup"] = f"{self.module_restore_cmd} {self.module_config}"
+                    base_subs["module_setup"] = f"{self.module_restore_cmd} {self.module_config}"
                 else:
-                    subs["module_setup"] = "# no specific module setup given"
+                    base_subs["module_setup"] = "# no specific module setup given"
                 time_limit = 0
                 commands = []
                 for threads_per_rank in experiment_suite.threads_per_rank:
@@ -421,7 +421,6 @@ class SBatchRunner(BaseRunner):
                                 job_time_limit = experiment_suite.get_input_time_limit(
                                     input.name
                                 )
-                            time_limit += job_time_limit
                             config_jobname = self.jobname(
                                 iinput, input, mpi_ranks, threads_per_rank, i, seed=seed
                             )
@@ -444,16 +443,41 @@ class SBatchRunner(BaseRunner):
                                 timeout=job_time_limit,
                                 env=env_variables,
                             )
-                            commands.append(cmd_string)
-                subs["commands"] = "\n".join(commands)
-                subs["time_string"] = time.strftime(
-                    format_duration(seconds=time_limit)
-                )
-                job_script = template.substitute(subs)
-                job_file = self.job_output_directory / aggregate_jobname
-                with open(job_file, "w+") as job:
-                    job.write(job_script)
-                njobs += 1
+                            if self.group_configs:
+                                commands.append(cmd_string)
+                                time_limit += job_time_limit
+                            else:
+                                job_subs = dict(base_subs)
+                                log_path = self.output_directory / f"{config_jobname}-log.txt"
+                                err_log_path = self.output_directory / f"{config_jobname}-err.txt"
+                                job_subs["output_log"] = str(log_path)
+                                job_subs["error_output_log"] = str(err_log_path)
+                                job_subs["job_name"] = config_jobname
+                                job_subs["commands"] = cmd_string
+                                job_subs["time_string"] = time.strftime(
+                                    format_duration(seconds=job_time_limit)
+                                )
+                                job_script = template.substitute(job_subs)
+                                job_file = self.job_output_directory / config_jobname
+                                with open(job_file, "w+") as job:
+                                    job.write(job_script)
+                                njobs += 1
+                if self.group_configs:
+                    instance_name = self.config_name(iinput, input, cores=ncores)
+                    log_path = self.output_directory / f"{instance_name}-log.txt"
+                    err_log_path = self.output_directory / f"{instance_name}-err.txt"
+                    base_subs["output_log"] = str(log_path)
+                    base_subs["error_output_log"] = str(err_log_path)
+                    base_subs["job_name"] = aggregate_jobname
+                    base_subs["commands"] = "\n".join(commands)
+                    base_subs["time_string"] = time.strftime(
+                        format_duration(seconds=time_limit)
+                    )
+                    job_script = template.substitute(base_subs)
+                    job_file = self.job_output_directory / aggregate_jobname
+                    with open(job_file, "w+") as job:
+                        job.write(job_script)
+                    njobs += 1
         print(f"Created {njobs} job files in directory {self.job_output_directory}.")
 
     def required_nodes(self, cores, tasks_per_node):
@@ -493,6 +517,7 @@ class SuperMUCRunner(SBatchRunner):
         omit_seed=False,
         fresh=False,
         date_suffix=True,
+        group_configs=True,
     ):
         SBatchRunner.__init__(
             self,
@@ -512,6 +537,7 @@ class SuperMUCRunner(SBatchRunner):
             omit_seed,
             fresh,
             date_suffix,
+            group_configs,
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 48
 
@@ -555,6 +581,7 @@ class HorekaRunner(SBatchRunner):
         omit_seed=False,
         fresh=False,
         date_suffix=True,
+        group_configs=True,
     ):
         SBatchRunner.__init__(
             self,
@@ -574,6 +601,7 @@ class HorekaRunner(SBatchRunner):
             omit_seed,
             fresh,
             date_suffix,
+            group_configs,
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 76
 
@@ -616,6 +644,7 @@ class GenericDistributedMemoryRunner(SBatchRunner):
         omit_seed=False,
         fresh=False,
         date_suffix=True,
+        group_configs=True,
     ):
         SBatchRunner.__init__(
             self,
@@ -635,6 +664,7 @@ class GenericDistributedMemoryRunner(SBatchRunner):
             omit_seed,
             fresh,
             date_suffix,
+            group_configs,
         )
         self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 1
 
@@ -724,6 +754,7 @@ def get_runner(args, suite, name_override=None):
     # print("type: ", suite.suite_type)
     suite_name = name_override or suite.name
     date_suffix = not getattr(args, "no_date_suffix", False)
+    group_configs = not getattr(args, "no_job_grouping", False)
     min_cores, max_cores = _resolve_cores_bounds(args, suite)
     if args.machine == "shared":
         runner = SharedMemoryRunner(
@@ -764,6 +795,7 @@ def get_runner(args, suite, name_override=None):
             suite.omit_seed,
             args.fresh,
             date_suffix,
+            group_configs,
         )
     elif args.machine in "horeka":
         runner = HorekaRunner(
@@ -784,6 +816,7 @@ def get_runner(args, suite, name_override=None):
             suite.omit_seed,
             args.fresh,
             date_suffix,
+            group_configs,
         )
     elif args.machine == "generic-job-file":
         runner = GenericDistributedMemoryRunner(
@@ -804,6 +837,7 @@ def get_runner(args, suite, name_override=None):
             suite.omit_seed,
             args.fresh,
             date_suffix,
+            group_configs,
         )
     else:
         exit("Unknown machine type: " + args.machine)
