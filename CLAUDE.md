@@ -9,14 +9,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Setup
 
 ```bash
-pipenv install       # install pyyaml dependency
-pipenv shell         # activate environment
+uv sync               # install pyyaml dependency into .venv
 ```
 
 ## Running experiments
 
 ```bash
-pipenv run python3 run-experiments.py <suite-name> --machine <target> [options]
+uv run python3 run-experiments.py <suite-name> --machine <target> [options]
 ```
 
 Key flags:
@@ -28,7 +27,7 @@ Key flags:
 
 No automated test suite exists. Use the example suite to verify behavior. `examples/test-app` is a stand-in bash "binary" (echoes its args and writes a minimal JSON result); point `BUILD_DIR` at its parent so the suite's `executable: test-app` resolves:
 ```bash
-BUILD_DIR=examples pipenv run python3 run-experiments.py test --machine shared --search-dirs examples/suites --output-dir /tmp/kaval_test
+BUILD_DIR=examples uv run python3 run-experiments.py test --machine shared --search-dirs examples/suites --output-dir /tmp/kaval_test
 ```
 
 ## Architecture
