@@ -107,6 +107,25 @@ def main():
     parser.add_argument("--min-cores", default=None, type=int, help="Lower bound on core counts; overrides suite min_cores (default 1)")
     parser.add_argument("--cores", nargs="*", help="Override suite ncores with an explicit list of core counts or a special keyword: 'pow2' for powers of two (1,2,4,...), 'sqr' for square numbers (1,4,9,16,...), 'sqr-pow2' for powers of two that are also squares (1,4,16,64,...), 'node-size-pow2' for powers-of-two multiples of tasks_per_node")
     parser.add_argument(
+        "--input-filter",
+        nargs="*",
+        help="Only generate jobs for inputs whose name or short (output-directory) name "
+        "contains one of these substrings (case-insensitive).",
+    )
+    parser.add_argument(
+        "--config-index",
+        nargs="*",
+        type=int,
+        help="Only generate jobs for configs at these 0-based indices, matching the "
+        "'idx' field written to the suite's config.json.",
+    )
+    parser.add_argument(
+        "--config-filter",
+        nargs="*",
+        help="Only generate jobs for configs matching all given key=value pairs "
+        "(e.g. --config-filter variant=bfs1 boost=True); values are compared as strings.",
+    )
+    parser.add_argument(
         "-t", "--time-limit",
         default=parse_time_limit(os.environ["TIME_LIMIT"]) if "TIME_LIMIT" in os.environ else None,
         type=parse_time_limit,
@@ -159,6 +178,10 @@ def main():
     )
 
     args = parser.parse_args()
+    if args.config_filter:
+        for item in args.config_filter:
+            if "=" not in item:
+                sys.exit(f"Error: --config-filter entries must be key=value, got {item!r}")
     suites = load_suites(args.suite_files, args.search_dirs)
 
     for suitename in args.suite:
@@ -192,6 +215,21 @@ def main():
 
     for suitename in active_suites:
         suite = suites.get(suitename)
+        if args.input_filter or args.config_index or args.config_filter:
+            index_filter = set(args.config_index) if args.config_index else None
+            kv_filter = parse_config_filter(args.config_filter)
+            matched_inputs = sum(
+                1 for inp in suite.inputs if input_matches_filter(inp, args.input_filter)
+            )
+            matched_configs = sum(
+                1
+                for i, c in enumerate(suite.configs)
+                if config_matches_filter(i, c, index_filter, kv_filter)
+            )
+            print(
+                f"{suitename}: filters match {matched_inputs}/{len(suite.inputs)} inputs, "
+                f"{matched_configs}/{len(suite.configs)} configs"
+            )
         runner = get_runner(args, suite, name_override=effective_name(suitename))
         runner.execute(suite)
 

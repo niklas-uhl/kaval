@@ -246,13 +246,20 @@ class SharedMemoryRunner(BaseRunner):
             cores_list = _expand_cores_tokens(
                 experiment_suite.cores, min_cores, max_cores, tpn
             )
+        input_filter = getattr(self, "input_filter", None)
+        config_index_filter = getattr(self, "config_index_filter", None)
+        config_filter = getattr(self, "config_filter", None)
         for iinput, input in enumerate(experiment_suite.inputs):
+            if not input_matches_filter(input, input_filter):
+                continue
             for ncores in cores_list:
                 if ncores < min_cores or ncores > max_cores:
                     continue
                 for seed in experiment_suite.seeds:
                     for threads_per_rank in experiment_suite.threads_per_rank:
                         for i, config in enumerate(experiment_suite.configs):
+                            if not config_matches_filter(i, config, config_index_filter, config_filter):
+                                continue
                             local_config = config.copy()
                             mpi_ranks = ncores // threads_per_rank
 
@@ -384,7 +391,12 @@ class SBatchRunner(BaseRunner):
             cores_list = _expand_cores_tokens(
                 experiment_suite.cores, min_cores, max_cores, tpn
             )
+        input_filter = getattr(self, "input_filter", None)
+        config_index_filter = getattr(self, "config_index_filter", None)
+        config_filter = getattr(self, "config_filter", None)
         for iinput, input in enumerate(experiment_suite.inputs):
+            if not input_matches_filter(input, input_filter):
+                continue
             for ncores in cores_list:
                 if ncores < min_cores or ncores > max_cores:
                     continue
@@ -414,6 +426,8 @@ class SBatchRunner(BaseRunner):
                     mpi_ranks = ncores // threads_per_rank
                     ranks_per_node = tasks_per_node // threads_per_rank
                     for i, config in enumerate(experiment_suite.configs):
+                        if not config_matches_filter(i, config, config_index_filter, config_filter):
+                            continue
                         for seed in experiment_suite.seeds:
                             if self.time_limit is not None:
                                 job_time_limit = self.time_limit
@@ -462,7 +476,7 @@ class SBatchRunner(BaseRunner):
                                 with open(job_file, "w+") as job:
                                     job.write(job_script)
                                 njobs += 1
-                if self.group_configs:
+                if self.group_configs and commands:
                     instance_name = self.config_name(iinput, input, cores=ncores)
                     log_path = self.output_directory / f"{instance_name}-log.txt"
                     err_log_path = self.output_directory / f"{instance_name}-err.txt"
@@ -675,6 +689,54 @@ class GenericDistributedMemoryRunner(SBatchRunner):
         return 1
 
 
+def input_matches_filter(input, patterns):
+    """True if `input` should be kept under an --input-filter substring list.
+
+    Matches case-insensitively against both `.name` and `.short_name` for an
+    InputGraph, or against the bare string for a plain file-path input. An
+    empty/None pattern list matches everything.
+    """
+    if not patterns:
+        return True
+    if isinstance(input, expcore.InputGraph):
+        haystacks = [input.name, input.short_name]
+    else:
+        haystacks = [str(input)]
+    haystacks = [h.lower() for h in haystacks]
+    return any(pattern.lower() in haystack for pattern in patterns for haystack in haystacks)
+
+
+def config_matches_filter(index, config, index_filter, kv_filter):
+    """True if config `config` (at 0-based `index`) survives --config-index/--config-filter.
+
+    `index_filter` is a container of indices to keep (None means all indices
+    match). `kv_filter` is a dict of key -> expected-value-as-string; a config
+    must contain every key with a matching (stringified) value. Both filters
+    must pass; either being falsy/None means that filter is not applied.
+    """
+    if index_filter is not None and index not in index_filter:
+        return False
+    if kv_filter:
+        for key, expected in kv_filter.items():
+            actual = config.get(key)
+            if isinstance(actual, dict) and "type" in actual and "value" in actual:
+                actual = actual["value"]
+            if str(actual) != expected:
+                return False
+    return True
+
+
+def parse_config_filter(pairs):
+    """Parse ``--config-filter key=value ...`` CLI tokens into a dict, or None."""
+    if not pairs:
+        return None
+    result = {}
+    for pair in pairs:
+        key, _, value = pair.partition("=")
+        result[key] = value
+    return result
+
+
 def _expand_cores_tokens(tokens, min_cores, max_cores, tasks_per_node=None):
     """Expand a list of ncores tokens into a concrete list of core counts.
 
@@ -772,6 +834,9 @@ def get_runner(args, suite, name_override=None):
         runner.max_cores = max_cores
         runner.min_cores = min_cores
         runner.override_cores = _expand_cores_override(args, suite)
+        runner.input_filter = getattr(args, "input_filter", None)
+        runner.config_index_filter = set(args.config_index) if getattr(args, "config_index", None) else None
+        runner.config_filter = parse_config_filter(getattr(args, "config_filter", None))
         if getattr(args, "copy_binary", False):
             runner.prepare_binary(suite)
         return runner
@@ -845,6 +910,9 @@ def get_runner(args, suite, name_override=None):
     runner.max_cores = max_cores
     runner.min_cores = min_cores
     runner.override_cores = _expand_cores_override(args, suite)
+    runner.input_filter = getattr(args, "input_filter", None)
+    runner.config_index_filter = set(args.config_index) if getattr(args, "config_index", None) else None
+    runner.config_filter = parse_config_filter(getattr(args, "config_filter", None))
     if getattr(args, "copy_binary", False):
         runner.prepare_binary(suite)
     return runner
