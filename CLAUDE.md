@@ -25,6 +25,9 @@ Key flags:
 - `--fresh`: wipe experiment directory before running
 - `--test`: use test partition on SLURM clusters
 - `--no-job-grouping`: SLURM machine types only. By default, every config/seed/thread-count combination for a given input and core count is packed into one sbatch job file as multiple sequential `mpiexec` invocations. This flag disables that grouping, producing one job file per `mpiexec` invocation instead (job/log/error-log file names and the SLURM time limit become per-invocation rather than aggregated).
+- `--input-filter`: only generate jobs for inputs whose `.name`/`.short_name` (or, for bare file-path inputs, the string itself) contains one of the given substrings (case-insensitive, OR'd across multiple values)
+- `--config-index`: only generate jobs for configs at these 0-based indices, matching the `idx` field written to the suite's `config.json`
+- `--config-filter`: only generate jobs for configs matching all given `key=value` pairs (e.g. `--config-filter variant=bfs1`); values are compared as strings. Combines with `--config-index` (both must pass)
 
 No automated test suite exists. Use the example suite to verify behavior. `examples/test-app` is a stand-in bash "binary" (echoes its args and writes a minimal JSON result); point `BUILD_DIR` at its parent so the suite's `executable: test-app` resolves:
 ```bash
