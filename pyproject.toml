@@ -1,0 +1,11 @@
+[project]
+name = "kaval"
+version = "0.1.0"
+description = "Orchestrate computational experiments across HPC environments."
+requires-python = ">=3.9"
+dependencies = [
+    "pyyaml",
+]
+
+[tool.uv]
+package = false
