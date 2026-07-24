@@ -382,6 +382,12 @@ class SBatchRunner(BaseRunner):
             command_template = template_file.read()
         command_template = Template(command_template)
         njobs = 0
+        manifest_path = self.job_output_directory / "manifest.json"
+        manifest = {"omit_output_path": self.omit_output_path, "jobs": {}}
+        if manifest_path.exists():
+            with open(manifest_path) as f:
+                manifest = json.load(f)
+            manifest["omit_output_path"] = self.omit_output_path
         # Determine core list with overrides and bounds
         min_cores = getattr(self, "min_cores", DEFAULT_MIN_CORES)
         max_cores = getattr(self, "max_cores", DEFAULT_MAX_CORES)
@@ -406,6 +412,7 @@ class SBatchRunner(BaseRunner):
                     tasks_per_node = self.tasks_per_node
 
                 aggregate_jobname = self.jobname(iinput, input, cores=ncores)
+                instance_name = self.config_name(iinput, input, cores=ncores)
                 base_subs = {}
                 nodes = self.required_nodes(ncores, tasks_per_node)
                 base_subs["nodes"] = nodes
@@ -422,6 +429,7 @@ class SBatchRunner(BaseRunner):
                     base_subs["module_setup"] = "# no specific module setup given"
                 time_limit = 0
                 commands = []
+                outputs = []
                 for threads_per_rank in experiment_suite.threads_per_rank:
                     mpi_ranks = ncores // threads_per_rank
                     ranks_per_node = tasks_per_node // threads_per_rank
@@ -459,6 +467,7 @@ class SBatchRunner(BaseRunner):
                             )
                             if self.group_configs:
                                 commands.append(cmd_string)
+                                outputs.append(config_jobname)
                                 time_limit += job_time_limit
                             else:
                                 job_subs = dict(base_subs)
@@ -476,8 +485,12 @@ class SBatchRunner(BaseRunner):
                                 with open(job_file, "w+") as job:
                                     job.write(job_script)
                                 njobs += 1
+                                manifest["jobs"][config_jobname] = {
+                                    "cores": ncores,
+                                    "input": instance_name,
+                                    "outputs": [config_jobname],
+                                }
                 if self.group_configs and commands:
-                    instance_name = self.config_name(iinput, input, cores=ncores)
                     log_path = self.output_directory / f"{instance_name}-log.txt"
                     err_log_path = self.output_directory / f"{instance_name}-err.txt"
                     base_subs["output_log"] = str(log_path)
@@ -492,6 +505,13 @@ class SBatchRunner(BaseRunner):
                     with open(job_file, "w+") as job:
                         job.write(job_script)
                     njobs += 1
+                    manifest["jobs"][aggregate_jobname] = {
+                        "cores": ncores,
+                        "input": instance_name,
+                        "outputs": outputs,
+                    }
+        with open(manifest_path, "w") as f:
+            json.dump(manifest, f, indent=2)
         print(f"Created {njobs} job files in directory {self.job_output_directory}.")
 
     def required_nodes(self, cores, tasks_per_node):
