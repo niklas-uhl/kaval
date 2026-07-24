@@ -1,4 +1,6 @@
-# kaval
+# kaval 🪈
+
+*The HPC job shepherd's instrument.*
 
 A Python CLI for orchestrating computational experiments across HPC environments.
 It reads YAML experiment suite files, expands parameter combinations (cartesian
