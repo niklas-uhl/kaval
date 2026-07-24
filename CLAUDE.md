@@ -25,6 +25,7 @@ Key flags:
 - `--cores` / `--min-cores` / `--max-cores`: core count control; special tokens: `pow2` (1,2,4,…), `sqr` (1,4,9,16,…), `sqr-pow2` (powers of two that are also squares: 1,4,16,64,…), or `node-size-pow2` (tpn,2×tpn,… requires `--tasks-per-node`). The same tokens and `min_cores`/`max_cores` bounds may be set in the suite YAML (`ncores`, `min_cores`, `max_cores`); CLI flags override the suite values (defaults: min 1, max 8000).
 - `--fresh`: wipe experiment directory before running
 - `--test`: use test partition on SLURM clusters
+- `--no-job-grouping`: SLURM machine types only. By default, every config/seed/thread-count combination for a given input and core count is packed into one sbatch job file as multiple sequential `mpiexec` invocations. This flag disables that grouping, producing one job file per `mpiexec` invocation instead (job/log/error-log file names and the SLURM time limit become per-invocation rather than aggregated).
 
 No automated test suite exists. Use the example suite to verify behavior. `examples/test-app` is a stand-in bash "binary" (echoes its args and writes a minimal JSON result); point `BUILD_DIR` at its parent so the suite's `executable: test-app` resolves:
 ```bash
