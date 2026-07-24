@@ -139,6 +139,13 @@ def main():
         help="Do not append a date suffix to the experiment data and output directories"
     )
     parser.add_argument(
+        "--no-job-grouping",
+        action="store_true",
+        help="Do not group multiple configs/seeds/thread-counts for the same input "
+        "and core count into a single sbatch job file. Instead, generate one job "
+        "file per mpiexec invocation. Only affects SLURM machine types."
+    )
+    parser.add_argument(
         "--name",
         help="Override the directory name for the suite. Errors if multiple suites would produce the same name.",
     )
