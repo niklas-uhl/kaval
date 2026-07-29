@@ -347,6 +347,7 @@ class GenericInstance(InputGraph):
         # produced by explode()'s shallow copies
         self.params = copy.deepcopy(kwargs)
         self.params.pop("name", None)
+        self.short_name_ = self.params.pop("short_name", None)
         self.parse_scale_weak_params(self.params)
         self.params.pop("scale_weak", None)
 
@@ -433,6 +434,12 @@ class GenericInstance(InputGraph):
         for_each_argument(self.params, parse_argument)
         name = self.name_ + "_" + "_".join(param_strings)
         return slugify.slugify(name)
+
+    @property
+    def short_name(self):
+        if self.short_name_:
+            return slugify.slugify(self.short_name_)
+        return self.name
 
 
 class ExperimentSuite:

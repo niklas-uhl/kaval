@@ -8,6 +8,7 @@ ncores: [1, 64]
 inputs:
   - generator: generic
     name: strings
+    short_name: strings-500  # keeps job/output names short despite many params below
     string-generator: 1
     len-strings: 500
     num-strings: [10000, 100000]

@@ -64,6 +64,8 @@ See `examples/suites/test.suite.yaml` for a working example. Top-level keys incl
 
 Each `graphs`/`inputs` entry picks a generator via `generator: kagen | generic`. `generic` (`dummy` also still accepted, as a legacy alias) passes its remaining keys straight through as CLI params to `executable` — the mechanism for any generator that isn't KaGen (e.g. a colleague's string generator), not a placeholder despite the old name. See `examples/suites/generic-input.suite.yaml` for the `inputs:`/`generic` spelling.
 
+A `generic` entry's `.short_name` (used for job/output naming, see below) is normally its full `.name` — the required `name:` plus every other key/value exploded and slugified, which gets unwieldy once a generator takes many params. Set `short_name:` to override it with a fixed, readable string instead; `.name` (the dedup/time-limit key) is untouched, and uniqueness across exploded param combinations still comes from the `in{N}_` input-index prefix in job/output names, not from `short_name` itself, so reusing one `short_name` across several exploded variants of the same entry is safe.
+
 ### Reusable instance sets
 To avoid repeating the same inputs across suites, define them once in a `*.instances.yaml` file (auto-discovered in `--search-dirs`, alongside `.suite.yaml` files). Each such file has a top-level `name` and a `graphs`/`inputs` list in the same format as a suite's. A suite pulls a set in via an `import` entry in its own `graphs`/`inputs` list, and can mix imported sets with inline graphs:
 
