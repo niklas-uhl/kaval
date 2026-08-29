@@ -1,3 +1,9 @@
 /__pycache__/
 experiment_data/
 /.venv/
+
+# pipenv was replaced by uv; ignore these in case an old pipenv-managed
+# checkout silently regenerates them (pipenv creates an empty Pipfile if one
+# isn't found rather than erroring)
+/Pipfile
+/Pipfile.lock

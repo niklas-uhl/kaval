@@ -8,17 +8,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Setup
 
-```bash
-uv sync               # install pyyaml dependency into .venv
-```
-
-## Running experiments
+kaval is a proper installable package (`pyproject.toml` + hatchling), so `uv sync` builds it into `.venv` in editable mode and exposes a `kaval` console script:
 
 ```bash
-uv run python3 run-experiments.py <suite-name> --machine <target> [options]
+uv sync               # install pyyaml + kaval itself (editable) into .venv
 ```
 
-Key flags:
+pipenv is no longer the primary tool, but `pyproject.toml` is still a usable source of truth for its dependencies if you'd rather stay on pipenv: `pipenv install` alone does *not* read `pyproject.toml` (it just creates an empty `Pipfile`) — use `pipenv install -e .` instead, which installs kaval editable via pip and pulls in `pyyaml` (and the `kaval` console script) transitively, same as `uv sync`.
+
+## Running, submitting, and checking on experiments
+
+`kaval` is the top-level entry point, with three subcommands. As an installed console script it can be invoked directly through `uv run` (no `python3 kaval.py` needed):
+
+```bash
+uv run kaval run <suite-name> --machine <target> [options]     # generate (and, for --machine shared, execute) a suite
+uv run kaval submit <suite-name> [options]                     # sbatch the job files a prior `run` generated
+uv run kaval status <suite-name> [options]                     # report submission/completion status
+```
+
+`uv run python3 kaval.py <subcommand> ...` and `uv run python3 run-experiments.py <suite-name> --machine <target> [options]` (the original entry point) both still work unchanged — `run-experiments.py` is a thin shim around `run_experiments.main()`, which `kaval run` also calls. `kaval.py`'s `main()` (the `kaval = "kaval:main"` target in `[project.scripts]`) just strips the subcommand off `sys.argv` and delegates; it holds no logic of its own.
+
+### `kaval run` key flags
 - `--machine`: `shared` | `horeka` | `supermuc` | `lichtenberg` | `generic-job-file`
 - `--search-dirs`: directories to search for `.suite.yaml` files
 - `--cores` / `--min-cores` / `--max-cores`: core count control; special tokens: `pow2` (1,2,4,…), `sqr` (1,4,9,16,…), `sqr-pow2` (powers of two that are also squares: 1,4,16,64,…), or `node-size-pow2` (tpn,2×tpn,… requires `--tasks-per-node`). The same tokens and `min_cores`/`max_cores` bounds may be set in the suite YAML (`ncores`, `min_cores`, `max_cores`); CLI flags override the suite values (defaults: min 1, max 8000).
@@ -31,13 +41,21 @@ Key flags:
 
 No automated test suite exists. Use the example suite to verify behavior. `examples/test-app` is a stand-in bash "binary" (echoes its args and writes a minimal JSON result); point `BUILD_DIR` at its parent so the suite's `executable: test-app` resolves:
 ```bash
-BUILD_DIR=examples uv run python3 run-experiments.py test --machine shared --search-dirs examples/suites --output-dir /tmp/kaval_test
+BUILD_DIR=examples uv run kaval run test --machine shared --search-dirs examples/suites --output-dir /tmp/kaval_test
 ```
+
+### `kaval submit` / `kaval status`
+For SLURM machine types, `kaval run` only writes job files (it never calls `sbatch` itself) — it also writes a `manifest.json` into the jobfiles directory recording, per job file, its core count and the list of expected per-invocation output-file stems. `kaval submit`/`kaval status` read that manifest so they never need to reload the suite YAML:
+
+- Suite resolution: `kaval submit <suite-name>` picks the most recently modified directory matching `<suite-name>` or `<suite-name>_*` under `--experiment-data-dir` (i.e. "the latest run of this suite"). Pass an explicit `--dir <path>` to bypass that and target a specific experiment directory directly.
+- Filtering: `--cores`/`--min-cores`/`--max-cores` (same tokens as `kaval run`) restrict which job files get submitted/reported on, matched against the `cores` field recorded per job file in the manifest.
+- `kaval submit` calls `sbatch` on each matching job file not already recorded as submitted (idempotent — re-running `kaval submit` after generating more job files only submits the new ones; `--resubmit` forces re-submission), and records `{job_id, submitted_at}` per job file in a sibling `submissions.json`, written incrementally so a crash mid-submit doesn't lose already-submitted state. `--dry-run` prints what would be submitted without calling `sbatch`.
+- `kaval status` reports one line per job file. Completion is inferred, not queried directly: since `sacct` history isn't reliably available on every cluster (a job can vanish from accounting once finished), a job ID still in `squeue` reports that live state, while a job ID no longer in `squeue` is classified by checking whether its expected output files (from the manifest) exist — `COMPLETED`/`PARTIAL (n/total)`/`FAILED/UNKNOWN`. This means completion detection needs `--omit-output-path` to *not* be set; with it set, `status` can only report NOT IN QUEUE, not completion.
 
 ## Architecture
 
 ### Entry point
-`run-experiments.py` — parses CLI args, resolves suite files, instantiates the right runner, and drives execution.
+`kaval.py` — dispatches `run`/`submit`/`status` to the modules below by rewriting `sys.argv` and delegating; holds no logic itself. `run-experiments.py` is kept as a direct-invocation compat shim.
 
 ### Core modules
 
@@ -47,11 +65,15 @@ BUILD_DIR=examples uv run python3 run-experiments.py test --machine shared --sea
 - `CLIArgumentType` — enum controlling how arguments are passed to the binary (`FLAGS`, `POSITIONAL`, `POSITIONAL_LIST`, `FLAG_LIST`)
 - Parameter expansion: YAML config lists are exploded into individual runs via cartesian product
 
+**`run_experiments.py`** (`main()`) — parses CLI args, resolves suite files, instantiates the right runner, and drives execution. Backing module for both `run-experiments.py` and `kaval run`.
+
 **`runners.py`** — execution backends:
-- `BaseRunner` — shared logic (directory management, command building, deduplication via JSON state files)
+- `BaseRunner` — shared logic (directory management, command building)
 - `SharedMemoryRunner` — executes directly via subprocess on the local machine
-- `SBatchRunner` (abstract) → `SuperMUCRunner`, `HorekaRunner`, `GenericDistributedMemoryRunner` — generate and submit SLURM job scripts; each specialization knows its cluster's node size and scheduler quirks
+- `SBatchRunner` (abstract) → `SuperMUCRunner`, `HorekaRunner`, `GenericDistributedMemoryRunner` — generate SLURM job scripts and a `manifest.json` describing them (see below); each specialization knows its cluster's node size and scheduler quirks. Job files are written, not submitted — `kaval submit` handles submission.
 - `get_runner()` — factory that selects the backend from `--machine`
+
+**`submit_experiments.py`** (`main_submit()`, `main_status()`) — backing module for `kaval submit`/`kaval status`. Resolves a suite name or `--dir` to an experiment directory, reads that directory's `jobfiles/manifest.json` (job file → cores/expected outputs, written by `SBatchRunner.execute()`) and `jobfiles/submissions.json` (job file → job ID/submitted-at, written incrementally as jobs get submitted), and implements the `squeue`-plus-output-file completion heuristic described above.
 
 **`slugify.py`** — converts arbitrary strings to filesystem-safe slugs used in output directory naming.
 
