@@ -8,7 +8,6 @@
 #SBATCH --export=NONE
 #SBATCH --account=${account}
 #SBATCH --switches=${islands}
-#SBATCH --constraint='work'
 #SBATCH --ear=off
 
 ${module_setup}
@@ -18,5 +17,9 @@ islands_used=$$(scontrol show hostnames "$$SLURM_JOB_NODELIST" | sed -n 's/^\(i[
 echo "[LOG] JobID=$${SLURM_JOB_ID}"
 echo "[LOG] Nodes=$${SLURM_JOB_NODELIST}"
 echo "[LOG] Islands=$${islands_used:-unknown}"
+echo "[LOG] NumNodes=$${SLURM_JOB_NUM_NODES}"
+echo "[LOG] Modules:"
+module list 2>&1
+echo "[LOG] PATH=$$PATH"
 
 ${commands}
