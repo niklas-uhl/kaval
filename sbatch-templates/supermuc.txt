@@ -14,4 +14,9 @@
 ${module_setup}
 module load slurm_setup
 
+islands_used=$$(scontrol show hostnames "$$SLURM_JOB_NODELIST" | sed -n 's/^\(i[0-9][0-9]*\).*/\1/p' | sort -u | paste -sd, -)
+echo "[LOG] JobID=$${SLURM_JOB_ID}"
+echo "[LOG] Nodes=$${SLURM_JOB_NODELIST}"
+echo "[LOG] Islands=$${islands_used:-unknown}"
+
 ${commands}

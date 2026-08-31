@@ -10,4 +10,7 @@
 
 ${module_setup}
 
+echo "[LOG] JobID=$${SLURM_JOB_ID}"
+echo "[LOG] Nodes=$${SLURM_JOB_NODELIST}"
+
 ${commands}
