@@ -17,4 +17,7 @@ unset OMP_NUM_THREADS
 unset OMP_PROC_BIND
 unset OMP_PLACES
 
+echo "[LOG] JobID=$${SLURM_JOB_ID}"
+echo "[LOG] Nodes=$${SLURM_JOB_NODELIST}"
+
 ${commands}
