@@ -5,6 +5,7 @@
 #SBATCH -J ${job_name}
 #SBATCH --partition=${job_queue}
 #SBATCH --time=${time_string}
+#SBATCH --get-user-env
 #SBATCH --export=NONE
 #SBATCH --account=${account}
 #SBATCH --switches=${islands}
