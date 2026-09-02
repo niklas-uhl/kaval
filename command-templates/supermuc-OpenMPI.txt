@@ -1,6 +1,6 @@
 echo "[LOG] Starting ${jobname}"
 start=$$(date +%s.%N)
-${env} mpiexec -n ${mpi_ranks} ${cmd}
+${env} mpiexec -n ${mpi_ranks} --map-by ppr:${ranks_per_node}:node:PE=${threads_per_rank} --bind-to core ${cmd}
 end=$$(date +%s.%N)
 diff=$$(echo "$$end - $$start" | bc)
 echo "[LOG] Finished ${jobname} in $${diff} seconds"
