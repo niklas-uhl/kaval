@@ -372,16 +372,22 @@ class SBatchRunner(BaseRunner):
             sbatch_template = self.default_sbatch_template()
         self.sbatch_template = sbatch_template
 
-    def execute(self, experiment_suite: ExperimentSuite):
+    def module_setup(self):
+        if self.module_config:
+            return f"{self.module_restore_cmd} {self.module_config}"
+        return "# no specific module setup given"
+
+    def collect_jobs(self, experiment_suite: ExperimentSuite):
+        """Build the job units for a suite without writing anything.
+
+        Returns a list of ``(name, instance_name, base_subs, commands)``, one per
+        (input, ncores), where ``commands`` is a list of
+        ``(config_jobname, cmd_string, time_limit)``.
+        """
         project = os.environ.get("PROJECT", "PROJECT_NOT_SET")
-        self.dump_config(experiment_suite)
-        with open(self.sbatch_template) as template_file:
-            template = template_file.read()
-        template = Template(template)
         with open(self.command_template) as template_file:
             command_template = template_file.read()
         command_template = Template(command_template)
-        njobs = 0
         # Determine core list with overrides and bounds
         min_cores = getattr(self, "min_cores", DEFAULT_MIN_CORES)
         max_cores = getattr(self, "max_cores", DEFAULT_MAX_CORES)
@@ -394,6 +400,7 @@ class SBatchRunner(BaseRunner):
         input_filter = getattr(self, "input_filter", None)
         config_index_filter = getattr(self, "config_index_filter", None)
         config_filter = getattr(self, "config_filter", None)
+        units = []
         for iinput, input in enumerate(experiment_suite.inputs):
             if not input_matches_filter(input, input_filter):
                 continue
@@ -405,7 +412,6 @@ class SBatchRunner(BaseRunner):
                 else:
                     tasks_per_node = self.tasks_per_node
 
-                aggregate_jobname = self.jobname(iinput, input, cores=ncores)
                 base_subs = {}
                 nodes = self.required_nodes(ncores, tasks_per_node)
                 base_subs["nodes"] = nodes
@@ -416,11 +422,7 @@ class SBatchRunner(BaseRunner):
                 )
                 base_subs["islands"] = self.required_islands(nodes)
                 base_subs["account"] = project
-                if self.module_config:
-                    base_subs["module_setup"] = f"{self.module_restore_cmd} {self.module_config}"
-                else:
-                    base_subs["module_setup"] = "# no specific module setup given"
-                time_limit = 0
+                base_subs["module_setup"] = self.module_setup()
                 commands = []
                 for threads_per_rank in experiment_suite.threads_per_rank:
                     mpi_ranks = ncores // threads_per_rank
@@ -457,40 +459,49 @@ class SBatchRunner(BaseRunner):
                                 timeout=job_time_limit,
                                 env=env_variables,
                             )
-                            if self.group_configs:
-                                commands.append(cmd_string)
-                                time_limit += job_time_limit
-                            else:
-                                job_subs = dict(base_subs)
-                                log_path = self.output_directory / f"{config_jobname}-log.txt"
-                                err_log_path = self.output_directory / f"{config_jobname}-err.txt"
-                                job_subs["output_log"] = str(log_path)
-                                job_subs["error_output_log"] = str(err_log_path)
-                                job_subs["job_name"] = config_jobname
-                                job_subs["commands"] = cmd_string
-                                job_subs["time_string"] = time.strftime(
-                                    format_duration(seconds=job_time_limit)
-                                )
-                                job_script = template.substitute(job_subs)
-                                job_file = self.job_output_directory / config_jobname
-                                with open(job_file, "w+") as job:
-                                    job.write(job_script)
-                                njobs += 1
-                if self.group_configs and commands:
-                    instance_name = self.config_name(iinput, input, cores=ncores)
-                    log_path = self.output_directory / f"{instance_name}-log.txt"
-                    err_log_path = self.output_directory / f"{instance_name}-err.txt"
-                    base_subs["output_log"] = str(log_path)
-                    base_subs["error_output_log"] = str(err_log_path)
-                    base_subs["job_name"] = aggregate_jobname
-                    base_subs["commands"] = "\n".join(commands)
-                    base_subs["time_string"] = time.strftime(
-                        format_duration(seconds=time_limit)
+                            commands.append((config_jobname, cmd_string, job_time_limit))
+                if commands:
+                    units.append(
+                        (
+                            self.jobname(iinput, input, cores=ncores),
+                            self.config_name(iinput, input, cores=ncores),
+                            base_subs,
+                            commands,
+                        )
                     )
-                    job_script = template.substitute(base_subs)
-                    job_file = self.job_output_directory / aggregate_jobname
-                    with open(job_file, "w+") as job:
-                        job.write(job_script)
+        return units
+
+    def write_job(self, template, job_dir, log_dir, job_name, log_name, base_subs, commands):
+        subs = dict(base_subs)
+        subs["output_log"] = str(log_dir / f"{log_name}-log.txt")
+        subs["error_output_log"] = str(log_dir / f"{log_name}-err.txt")
+        subs["job_name"] = job_name
+        subs["commands"] = "\n".join(cmd for _, cmd, _ in commands)
+        subs["time_string"] = time.strftime(
+            format_duration(seconds=sum(t for _, _, t in commands))
+        )
+        with open(job_dir / job_name, "w+") as job:
+            job.write(template.substitute(subs))
+
+    def execute(self, experiment_suite: ExperimentSuite):
+        self.dump_config(experiment_suite)
+        with open(self.sbatch_template) as template_file:
+            template = Template(template_file.read())
+        njobs = 0
+        for name, instance_name, base_subs, commands in self.collect_jobs(experiment_suite):
+            if self.group_configs:
+                self.write_job(
+                    template, self.job_output_directory, self.output_directory,
+                    name, instance_name, base_subs, commands,
+                )
+                njobs += 1
+            else:
+                for command in commands:
+                    config_jobname = command[0]
+                    self.write_job(
+                        template, self.job_output_directory, self.output_directory,
+                        config_jobname, config_jobname, base_subs, [command],
+                    )
                     njobs += 1
         print(f"Created {njobs} job files in directory {self.job_output_directory}.")
 
@@ -687,6 +698,54 @@ class GenericDistributedMemoryRunner(SBatchRunner):
 
     def required_islands(self, nodes):
         return 1
+
+
+PACK_KEYS = ("nodes", "ntasks_per_node", "job_queue", "islands", "account", "module_setup")
+
+
+def pack_jobs(runs, job_dir, log_dir, pack_name, max_job_time=None):
+    """Pack the commands of several suites into as few job files as possible.
+
+    ``runs`` is a list of ``(runner, suite)`` pairs sharing one sbatch template.
+    Commands are grouped by node count (plus queue, islands, ...), regardless of
+    suite or input, and each group is split into jobs of at most
+    ``max_job_time`` seconds (summed per-command time limits). Each command
+    keeps the output path of its own suite.
+    """
+    with open(runs[0][0].sbatch_template) as template_file:
+        template = Template(template_file.read())
+    groups = {}
+    for runner, suite in runs:
+        runner.dump_config(suite)
+        for _, _, base_subs, commands in runner.collect_jobs(suite):
+            key = tuple(base_subs[k] for k in PACK_KEYS)
+            groups.setdefault(key, []).extend((base_subs, c) for c in commands)
+
+    job_dir.mkdir(exist_ok=True, parents=True)
+    log_dir.mkdir(exist_ok=True, parents=True)
+    names = {}
+    njobs = 0
+    for key in sorted(groups, key=lambda k: k[0]):
+        bins = [[]]
+        for entry in groups[key]:
+            t = sum(c[2] for _, c in bins[-1])
+            if bins[-1] and max_job_time is not None and t + entry[1][2] > max_job_time:
+                bins.append([])
+            bins[-1].append(entry)
+        nodes = key[0]
+        for entries in bins:
+            names[nodes] = names.get(nodes, 0) + 1
+            name = f"{pack_name}-n{nodes}-{names[nodes]}"
+            base_subs = dict(zip(PACK_KEYS, key))
+            base_subs["ntasks"] = max(s["ntasks"] for s, _ in entries)
+            commands = [c for _, c in entries]
+            runs[0][0].write_job(template, job_dir, log_dir, name, name, base_subs, commands)
+            njobs += 1
+            print(
+                f"{name}: {len(commands)} runs, "
+                f"{format_duration(sum(c[2] for c in commands))}"
+            )
+    print(f"Created {njobs} packed job files in directory {job_dir}.")
 
 
 def input_matches_filter(input, patterns):
