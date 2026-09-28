@@ -165,6 +165,26 @@ def main():
         "file per mpiexec invocation. Only affects SLURM machine types."
     )
     parser.add_argument(
+        "--pack-jobs",
+        action="store_true",
+        help="Pack the runs of all given suites into as few job files as possible: "
+        "runs are grouped by node count across suites and inputs, and each group is "
+        "split by --max-job-time. Outputs still go to each suite's own directory; "
+        "job files and logs go to <experiment-data-dir>/<pack-name>. SLURM machine types only."
+    )
+    parser.add_argument(
+        "--max-job-time",
+        type=parse_time_limit,
+        help="With --pack-jobs: upper bound on a packed job's time limit (sum of its "
+        "runs' time limits). Same formats as --time-limit. Unbounded if not given."
+    )
+    parser.add_argument(
+        "--pack-name",
+        default="packed",
+        help="With --pack-jobs: directory and job name for the packed jobs "
+        "(--prefix/--suffix and the date suffix apply).",
+    )
+    parser.add_argument(
         "--name",
         help="Override the directory name for the suite. Errors if multiple suites would produce the same name.",
     )
@@ -182,6 +202,10 @@ def main():
         for item in args.config_filter:
             if "=" not in item:
                 sys.exit(f"Error: --config-filter entries must be key=value, got {item!r}")
+    if args.pack_jobs and args.machine == "shared":
+        sys.exit("Error: --pack-jobs only applies to SLURM machine types")
+    if args.pack_jobs and args.no_job_grouping:
+        sys.exit("Error: --pack-jobs and --no-job-grouping are mutually exclusive")
     suites = load_suites(args.suite_files, args.search_dirs)
 
     for suitename in args.suite:
@@ -213,6 +237,7 @@ def main():
     if dupes:
         sys.exit(f"Error: --name/--prefix/--suffix would produce duplicate directory names: {sorted(dupes)}")
 
+    runs = []
     for suitename in active_suites:
         suite = suites.get(suitename)
         if args.input_filter or args.config_index or args.config_filter:
@@ -231,7 +256,26 @@ def main():
                 f"{matched_configs}/{len(suite.configs)} configs"
             )
         runner = get_runner(args, suite, name_override=effective_name(suitename))
-        runner.execute(suite)
+        if args.pack_jobs:
+            runs.append((runner, suite))
+        else:
+            runner.execute(suite)
+
+    if args.pack_jobs and runs:
+        pack_name = args.pack_name
+        if args.prefix:
+            pack_name = args.prefix + "_" + pack_name
+        if args.suffix:
+            pack_name = pack_name + "_" + args.suffix
+        if not args.no_date_suffix:
+            pack_name = pack_name + "_" + date.today().strftime("%y_%m_%d")
+        pack_dir = Path(args.experiment_data_dir) / pack_name
+        if args.fresh and pack_dir.exists():
+            shutil.rmtree(pack_dir)
+        job_dir = (
+            Path(args.job_output_dir) / pack_name if args.job_output_dir else pack_dir / "jobfiles"
+        )
+        pack_jobs(runs, job_dir, pack_dir / "output", pack_name, args.max_job_time)
 
 
 if __name__ == "__main__":
