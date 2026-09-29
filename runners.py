@@ -423,6 +423,9 @@ class SBatchRunner(BaseRunner):
                 base_subs["islands"] = self.required_islands(nodes)
                 base_subs["account"] = project
                 base_subs["module_setup"] = self.module_setup()
+                base_subs["job_time_limit"] = experiment_suite.get_input_job_time_limit(
+                    input.name
+                )
                 commands = []
                 for threads_per_rank in experiment_suite.threads_per_rank:
                     mpi_ranks = ncores // threads_per_rank
@@ -471,15 +474,17 @@ class SBatchRunner(BaseRunner):
                     )
         return units
 
-    def write_job(self, template, job_dir, log_dir, job_name, log_name, base_subs, commands):
+    def write_job(
+        self, template, job_dir, log_dir, job_name, log_name, base_subs, commands, seconds=None
+    ):
         subs = dict(base_subs)
         subs["output_log"] = str(log_dir / f"{log_name}-log.txt")
         subs["error_output_log"] = str(log_dir / f"{log_name}-err.txt")
         subs["job_name"] = job_name
         subs["commands"] = "\n".join(cmd for _, cmd, _ in commands)
-        subs["time_string"] = time.strftime(
-            format_duration(seconds=sum(t for _, _, t in commands))
-        )
+        if seconds is None:
+            seconds = job_seconds([(base_subs, c) for c in commands])
+        subs["time_string"] = time.strftime(format_duration(seconds=seconds))
         with open(job_dir / job_name, "w+") as job:
             job.write(template.substitute(subs))
 
@@ -703,6 +708,19 @@ class GenericDistributedMemoryRunner(SBatchRunner):
 PACK_KEYS = ("nodes", "ntasks_per_node", "job_queue", "islands", "account", "module_setup")
 
 
+def job_seconds(entries):
+    """Time limit of a job running ``entries``, a list of ``(base_subs, command)``.
+
+    Commands of one (input, ncores) unit share their ``base_subs``; each unit adds the
+    sum of its commands' time limits, capped by its ``job_time_limit`` if set.
+    """
+    units = {}
+    for base_subs, command in entries:
+        unit = units.setdefault(id(base_subs), [base_subs.get("job_time_limit"), 0])
+        unit[1] += command[2]
+    return sum(total if limit is None else min(limit, total) for limit, total in units.values())
+
+
 def pack_jobs(runs, job_dir, log_dir, pack_name, max_job_time=None):
     """Pack the commands of several suites into as few job files as possible.
 
@@ -728,8 +746,8 @@ def pack_jobs(runs, job_dir, log_dir, pack_name, max_job_time=None):
     for key in sorted(groups, key=lambda k: k[0]):
         bins = [[]]
         for entry in groups[key]:
-            t = sum(c[2] for _, c in bins[-1])
-            if bins[-1] and max_job_time is not None and t + entry[1][2] > max_job_time:
+            t = job_seconds(bins[-1] + [entry])
+            if bins[-1] and max_job_time is not None and t > max_job_time:
                 bins.append([])
             bins[-1].append(entry)
         nodes = key[0]
@@ -739,12 +757,12 @@ def pack_jobs(runs, job_dir, log_dir, pack_name, max_job_time=None):
             base_subs = dict(zip(PACK_KEYS, key))
             base_subs["ntasks"] = max(s["ntasks"] for s, _ in entries)
             commands = [c for _, c in entries]
-            runs[0][0].write_job(template, job_dir, log_dir, name, name, base_subs, commands)
-            njobs += 1
-            print(
-                f"{name}: {len(commands)} runs, "
-                f"{format_duration(sum(c[2] for c in commands))}"
+            seconds = job_seconds(entries)
+            runs[0][0].write_job(
+                template, job_dir, log_dir, name, name, base_subs, commands, seconds
             )
+            njobs += 1
+            print(f"{name}: {len(commands)} runs, {format_duration(seconds)}")
     print(f"Created {njobs} packed job files in directory {job_dir}.")
 
 

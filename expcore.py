@@ -459,6 +459,8 @@ class ExperimentSuite:
         input_time_limit={},
         min_cores=None,
         max_cores=None,
+        job_time_limit=None,
+        input_job_time_limit={},
     ):
         self.name = name
         self.executable = executable
@@ -474,12 +476,17 @@ class ExperimentSuite:
         self.seeds = seeds
         self.omit_seed = omit_seed
         self.input_time_limit = input_time_limit
+        self.job_time_limit = job_time_limit
+        self.input_job_time_limit = input_job_time_limit
 
     def set_input_time_limit(self, input_name, time_limit):
         self.input_time_limit[input_name] = time_limit
 
     def get_input_time_limit(self, input_name):
         return self.input_time_limit.get(input_name, self.time_limit)
+
+    def get_input_job_time_limit(self, input_name):
+        return self.input_job_time_limit.get(input_name, self.job_time_limit)
 
     def __repr__(self):
         return f"ExperimentSuite({self.name}, {self.cores}, {self.inputs}, {self.configs}, {self.time_limit}, {self.input_time_limit})"
@@ -564,12 +571,13 @@ def parse_graph_list(graph_list, instance_sets=None, _seen=None, overrides=None)
     import entry may carry a ``with`` mapping whose keys are merged into every
     resolved graph (overriding existing keys) before it is built, e.g. to add
     ``permute: True`` to a whole set. ``with`` values may themselves be lists to
-    explode. Returns ``(inputs, time_limits)``.
+    explode. Returns ``(inputs, time_limits, job_time_limits)``.
     """
     instance_sets = instance_sets or {}
     _seen = _seen if _seen is not None else set()
     inputs = []
     time_limits = {}
+    job_time_limits = {}
     for graph in graph_list:
         if type(graph) == str:
             if overrides:
@@ -596,12 +604,13 @@ def parse_graph_list(graph_list, instance_sets=None, _seen=None, overrides=None)
             # outer (use-site) overrides win on conflict
             merged_overrides = {**graph.get("with", {}), **(overrides or {})}
             _seen.add(set_name)
-            sub_inputs, sub_limits = parse_graph_list(
+            sub_inputs, sub_limits, sub_job_limits = parse_graph_list(
                 instance_sets[set_name], instance_sets, _seen, merged_overrides
             )
             _seen.discard(set_name)
             inputs.extend(sub_inputs)
             time_limits.update(sub_limits)
+            job_time_limits.update(sub_job_limits)
             continue
         # copy so that shared instance-set definitions are not mutated
         graph = copy.deepcopy(graph)
@@ -610,6 +619,7 @@ def parse_graph_list(graph_list, instance_sets=None, _seen=None, overrides=None)
         if "generator" in graph:
             generator = graph.pop("generator")
             time_limit_val = graph.pop("time_limit", None)
+            job_time_limit_val = graph.pop("job_time_limit", None)
             if generator == "kagen":
                 new_inputs = [KaGenGraph(**graph_variant) for graph_variant in explode(graph)]
             elif generator in ("generic", "dummy"):
@@ -622,9 +632,12 @@ def parse_graph_list(graph_list, instance_sets=None, _seen=None, overrides=None)
             if time_limit_val is not None:
                 for inp in new_inputs:
                     time_limits[inp.name] = parse_time_limit(time_limit_val)
+            if job_time_limit_val is not None:
+                for inp in new_inputs:
+                    job_time_limits[inp.name] = parse_time_limit(job_time_limit_val)
         else:
             raise ValueError(f"No generator defined for graph: {graph}.")
-    return inputs, time_limits
+    return inputs, time_limits, job_time_limits
 
 
 def _input_key(graph):
@@ -677,7 +690,7 @@ def load_suite_from_yaml(path, instance_sets=None):
     input_list = get_input_list(data, path)
     if input_list is None:
         raise ValueError(f"Suite '{path}' is missing a 'graphs' (or 'inputs') list.")
-    inputs, time_limits = parse_graph_list(input_list, instance_sets)
+    inputs, time_limits, job_time_limits = parse_graph_list(input_list, instance_sets)
     inputs = dedup_inputs(inputs)
     if "executable" in data:
         executable = data["executable"]
@@ -703,6 +716,10 @@ def load_suite_from_yaml(path, instance_sets=None):
         input_time_limit=time_limits,
         min_cores=data.get("min_cores"),
         max_cores=data.get("max_cores"),
+        job_time_limit=(
+            parse_time_limit(data["job_time_limit"]) if "job_time_limit" in data else None
+        ),
+        input_job_time_limit=job_time_limits,
     )
 
 
