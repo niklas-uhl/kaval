@@ -1,0 +1,7 @@
+echo "[LOG] Starting ${jobname}"
+start=$$(date +%s.%N)
+OMP_NUM_THREADS=${threads_per_rank} OMP_PLACES=cores OMP_PROC_BIND=close ${env} mpirun -n ${mpi_ranks} --map-by ppr:${ranks_per_node}:node:PE=${threads_per_rank} --bind-to core -x OMP_NUM_THREADS -x OMP_PLACES -x OMP_PROC_BIND ${cmd}
+end=$$(date +%s.%N)
+diff=$$(echo "$$end - $$start" | bc)
+echo "[LOG] Finished ${jobname} in $${diff} seconds"
+sleep 10

@@ -654,6 +654,69 @@ class HorekaRunner(SBatchRunner):
     def required_islands(self, nodes):
         return 1
 
+class Horeka2Runner(SBatchRunner):
+
+    def default_command_template(self):
+        return command_template_dir / "horeka2-OpenMPI.txt"
+
+    def default_sbatch_template(self):
+        return sbatch_template_dir / "horeka2.txt"
+
+    def __init__(
+        self,
+        suite_name,
+        output_path_option_name,
+        experiment_data_directory,
+        machine,
+        output_directory,
+        job_output_directory,
+        sbatch_template,
+        command_template,
+        module_config,
+        module_restore_cmd,
+        tasks_per_node,
+        time_limit,
+        use_test_partition=False,
+        omit_output_path=False,
+        omit_seed=False,
+        fresh=False,
+        date_suffix=True,
+        group_configs=True,
+    ):
+        SBatchRunner.__init__(
+            self,
+            suite_name,
+            output_path_option_name,
+            experiment_data_directory,
+            machine,
+            output_directory,
+            job_output_directory,
+            sbatch_template,
+            command_template,
+            module_config,
+            module_restore_cmd,
+            time_limit,
+            use_test_partition,
+            omit_output_path,
+            omit_seed,
+            fresh,
+            date_suffix,
+            group_configs,
+        )
+        self.tasks_per_node = tasks_per_node if tasks_per_node is not None else 192
+
+    def get_queue(self, cores, tasks_per_node, use_test_partition):
+        nodes = self.required_nodes(cores, tasks_per_node)
+        if nodes <= 2:
+            return "dev-cpu" if use_test_partition else "cpu"
+        elif nodes <= 161:
+            return "cpu"
+        else:
+            return ValueError("Cannot use more than 161 compute nodes on HoreKa!")
+
+    def required_islands(self, nodes):
+        return 1
+
 
 class GenericDistributedMemoryRunner(SBatchRunner):
     def default_command_template(self):
@@ -948,6 +1011,27 @@ def get_runner(args, suite, name_override=None):
         )
     elif args.machine in "horeka":
         runner = HorekaRunner(
+            suite_name,
+            suite.output_path_option_name,
+            args.experiment_data_dir,
+            args.machine,
+            args.output_dir,
+            args.job_output_dir,
+            args.sbatch_template,
+            args.command_template,
+            args.module_config,
+            args.module_restore_cmd,
+            args.tasks_per_node,
+            args.time_limit,
+            args.test,
+            args.omit_output_path,
+            suite.omit_seed,
+            args.fresh,
+            date_suffix,
+            group_configs,
+        )
+    elif args.machine in "horeka2":
+        runner = Horeka2Runner(
             suite_name,
             suite.output_path_option_name,
             args.experiment_data_dir,

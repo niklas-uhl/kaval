@@ -1,0 +1,30 @@
+#!/bin/bash
+#SBATCH --nodes=${nodes}
+#SBATCH --ntasks-per-node=${ntasks_per_node}
+#SBATCH -o ${output_log}
+#SBATCH -e ${error_output_log}
+#SBATCH -J ${job_name}
+#SBATCH --partition=${job_queue}
+#SBATCH --time=${time_string}
+#SBATCH --export=NONE
+#SBATCH --exclusive
+
+${module_setup}
+
+# No --ntasks: every node gets ntasks_per_node Slurm slots, also when a run uses fewer cores (mpirun -n
+# limits the ranks). With --ntasks=<cores>, Slurm spreads a partial job evenly (288 on 2 nodes = 144
+# slots each), so OpenMPI's node-filling ppr mapping exceeds a node's slots and its ranks yield when idle.
+
+# --export=NONE makes Slurm set SLURM_EXPORT_ENV=NONE in the job, which every srun inherits. mpirun
+# starts its per-node daemons through srun, so on more than one node they would start without the
+# modules loaded above ("execve(): prted: No such file or directory"). Let srun pass this environment on.
+export SLURM_EXPORT_ENV=ALL
+
+unset OMP_NUM_THREADS
+unset OMP_PROC_BIND
+unset OMP_PLACES
+
+echo "[LOG] JobID=$${SLURM_JOB_ID}"
+echo "[LOG] Nodes=$${SLURM_JOB_NODELIST}"
+
+${commands}

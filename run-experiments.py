@@ -97,7 +97,7 @@ def main():
     default_machine_type = os.environ.get("MACHINE", "generic-job-file")
     parser.add_argument(
         "--machine",
-        choices=["shared", "horeka", "supermuc", "lichtenberg", "generic-job-file"],
+        choices=["shared", "horeka", "horeka2", "supermuc", "lichtenberg", "generic-job-file"],
         default=default_machine_type,
     )
     parser.add_argument(
