@@ -5,6 +5,7 @@ time_limit: 61 # minutes
 seeds: [0, 1] # default: [0]
 omit_seed: True # seed is not passed as an arugment (seed acts as iteration)
 threads_per_rank: [1]
+# threads_option_name: threads # optional: pass threads_per_rank to the binary as --threads "<t>"
 graphs:
   - generator: dummy
     name: my_graph

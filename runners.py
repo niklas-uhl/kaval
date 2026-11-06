@@ -145,6 +145,13 @@ class BaseRunner:
             config[self.output_path_option_name] = str(json_output_prefix_path)
         if not self.omit_seed:
             config["seed"] = seed
+        if suite.threads_option_name:
+            if suite.threads_option_name in config:
+                raise ValueError(
+                    f"Config {config_index} sets '{suite.threads_option_name}', which is the "
+                    "suite's threads_option_name and gets filled from threads_per_rank."
+                )
+            config[suite.threads_option_name] = threads_per_rank
         cmd = expcore.command(
             suite.executable,
             ".",
