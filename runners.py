@@ -649,6 +649,9 @@ class HorekaRunner(SBatchRunner):
 
 class Horeka2Runner(SBatchRunner):
 
+    def default_command_template(self):
+        return command_template_dir / "horeka2-OpenMPI.txt"
+
     def default_sbatch_template(self):
         return sbatch_template_dir / "horeka2.txt"
 
