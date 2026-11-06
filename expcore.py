@@ -461,6 +461,7 @@ class ExperimentSuite:
         max_cores=None,
         job_time_limit=None,
         input_job_time_limit={},
+        threads_option_name=None,
     ):
         self.name = name
         self.executable = executable
@@ -478,6 +479,10 @@ class ExperimentSuite:
         self.input_time_limit = input_time_limit
         self.job_time_limit = job_time_limit
         self.input_job_time_limit = input_job_time_limit
+        # When set, every run gets this option with its threads_per_rank value
+        # (e.g. "threads" -> --threads "4"), for binaries that take their thread
+        # count on the command line rather than from OMP_NUM_THREADS.
+        self.threads_option_name = threads_option_name
 
     def set_input_time_limit(self, input_name, time_limit):
         self.input_time_limit[input_name] = time_limit
@@ -720,6 +725,7 @@ def load_suite_from_yaml(path, instance_sets=None):
             parse_time_limit(data["job_time_limit"]) if "job_time_limit" in data else None
         ),
         input_job_time_limit=job_time_limits,
+        threads_option_name=data.get("threads_option_name"),
     )
 
 
