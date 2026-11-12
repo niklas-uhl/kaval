@@ -26,25 +26,45 @@ from runners import *
 import expcore
 from expcore import parse_time_limit
 import argparse, os, sys
+import yaml
 from pathlib import Path
 
 
+def _suite_name(path):
+    """The suite's name from its YAML (as load_suite_from_yaml reads it), else the file name."""
+    try:
+        with open(path) as f:
+            name = (yaml.safe_load(f) or {}).get("name")
+    except Exception:
+        name = None
+    return name or os.path.basename(path).removesuffix(".suite.yaml")
+
+
 def load_suites(suite_files, search_paths):
+    """Load the suites; returns (suites, unavailable). A suite whose inputs reference an unset environment variable
+    (e.g. the root of a file-based instance set on another machine) is not an error while loading: it lands in
+    `unavailable` (name -> message), and only using it fails."""
     instance_sets = expcore.load_instance_sets(search_paths)
     suites = {}
-    for path in suite_files:
-        suite = expcore.load_suite_from_yaml(path, instance_sets)
+    unavailable = {}
+
+    def load(path):
+        try:
+            suite = expcore.load_suite_from_yaml(path, instance_sets)
+        except expcore.UnresolvedEnvVarError as e:
+            unavailable[_suite_name(path)] = str(e)
+            return
         suites[suite.name] = suite
+
+    for path in suite_files:
+        load(path)
     for path in search_paths:
         if not path:
             continue
         for file in os.listdir(path):
             if file.endswith(".suite.yaml"):
-                suite = expcore.load_suite_from_yaml(
-                    os.path.join(path, file), instance_sets
-                )
-                suites[suite.name] = suite
-    return suites
+                load(os.path.join(path, file))
+    return suites, unavailable
 
 
 def main():
@@ -206,18 +226,23 @@ def main():
         sys.exit("Error: --pack-jobs only applies to SLURM machine types")
     if args.pack_jobs and args.no_job_grouping:
         sys.exit("Error: --pack-jobs and --no-job-grouping are mutually exclusive")
-    suites = load_suites(args.suite_files, args.search_dirs)
+    suites, unavailable = load_suites(args.suite_files, args.search_dirs)
 
     for suitename in args.suite:
-        suite = suites.get(suitename)
+        if suitename in unavailable:
+            sys.exit(f"Error: suite {suitename!r} cannot be loaded: {unavailable[suitename]}")
 
     if args.list:
         for name in suites.keys():
             print(name)
+        for name, reason in unavailable.items():
+            print(f"{name} (unavailable: {reason})")
         sys.exit(0)
 
     if not args.suite:
         args.suite = list(suites.keys())
+        for name, reason in unavailable.items():
+            print(f"Skipping suite {name!r}: {reason}", file=sys.stderr)
 
     def effective_name(suite_name):
         if args.name:

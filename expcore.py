@@ -129,6 +129,10 @@ class InputGraph:
 _ENV_VAR_RE = re.compile(r'\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*')
 
 
+class UnresolvedEnvVarError(ValueError):
+    """An instance root references an environment variable that is not set."""
+
+
 def expand_env_vars_or_raise(value):
     """Expand $VAR/${VAR} references in `value` via os.path.expandvars.
 
@@ -139,7 +143,7 @@ def expand_env_vars_or_raise(value):
     expanded = os.path.expandvars(value)
     m = _ENV_VAR_RE.search(expanded)
     if m:
-        raise ValueError(
+        raise UnresolvedEnvVarError(
             f"Unresolved environment variable {m.group(0)!r} in root {value!r}. "
             "Set it in the environment before loading suites."
         )
