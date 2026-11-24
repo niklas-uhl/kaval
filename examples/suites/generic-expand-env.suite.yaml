@@ -1,0 +1,19 @@
+# Demonstrates `expand_env` on a generic input. Params listed there have their
+# $VAR/${VAR} references expanded when the suite loads; an unset variable makes
+# the suite unavailable (shown by --list) instead of reaching a job script.
+# Other params are passed through as-is and expanded by the shell at run time,
+# which is what runtime-only variables like $TMPDIR or $SLURM_JOB_ID need.
+# BUILD_DIR stands in for a per-cluster data root here, since the examples
+# need it set anyway.
+name: generic-expand-env-example
+executable: test-app # resolved under $BUILD_DIR; run with BUILD_DIR=examples
+ncores: [1]
+inputs:
+  - generator: generic
+    name: strings
+    short_name: strings
+    input-dir: ["${BUILD_DIR}/strings-a", "${BUILD_DIR}/strings-b"] # sweeps still explode
+    scratch: $TMPDIR/work # left for the shell
+    expand_env: [input-dir]
+config:
+  num-iterations: [1]

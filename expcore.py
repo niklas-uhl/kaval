@@ -130,10 +130,10 @@ _ENV_VAR_RE = re.compile(r'\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*')
 
 
 class UnresolvedEnvVarError(ValueError):
-    """An instance root references an environment variable that is not set."""
+    """An instance root (or an ``expand_env`` param) references an environment variable that is not set."""
 
 
-def expand_env_vars_or_raise(value):
+def expand_env_vars_or_raise(value, what="root"):
     """Expand $VAR/${VAR} references in `value` via os.path.expandvars.
 
     Raises ValueError if a reference is left unresolved (i.e. the env var is
@@ -144,7 +144,7 @@ def expand_env_vars_or_raise(value):
     m = _ENV_VAR_RE.search(expanded)
     if m:
         raise UnresolvedEnvVarError(
-            f"Unresolved environment variable {m.group(0)!r} in root {value!r}. "
+            f"Unresolved environment variable {m.group(0)!r} in {what} {value!r}. "
             "Set it in the environment before loading suites."
         )
     return expanded
@@ -354,6 +354,41 @@ class GenericInstance(InputGraph):
         self.short_name_ = self.params.pop("short_name", None)
         self.parse_scale_weak_params(self.params)
         self.params.pop("scale_weak", None)
+        # `expand_env` names params whose $VAR/${VAR} references are expanded
+        # (and checked) when the suite loads, instead of by the shell at run
+        # time. `self.params` keeps the unexpanded values, so `.name` stays the
+        # same across machines; only `args()` sees `self.cli_params`.
+        self.cli_params = self.expand_env_params(self.params, kwargs.get("expand_env"))
+        self.params.pop("expand_env", None)
+
+    @staticmethod
+    def expand_env_params(params, expand_env):
+        if expand_env is None:
+            return params
+        if isinstance(expand_env, str):
+            expand_env = [expand_env]
+        cli_params = copy.deepcopy(params)
+        cli_params.pop("expand_env", None)
+        for key in expand_env:
+            if key not in cli_params:
+                raise ValueError(
+                    f"expand_env names '{key}', which is not a param of this input. "
+                    f"Params: {sorted(cli_params)}."
+                )
+
+            def expand(value):
+                if isinstance(value, str):
+                    return expand_env_vars_or_raise(value, what=f"param '{key}'")
+                if isinstance(value, list):
+                    return [expand(v) for v in value]
+                return value
+
+            value = cli_params[key]
+            if isinstance(value, dict) and "value" in value:
+                value["value"] = expand(value["value"])
+            else:
+                cli_params[key] = expand(value)
+        return cli_params
 
     def parse_scale_weak_params(self, kwargs):
         scale_weak_params = kwargs.get("scale_weak")
@@ -409,7 +444,7 @@ class GenericInstance(InputGraph):
             if param:
                 params.append(param)
 
-        for_each_argument(self.params, parse_argument)
+        for_each_argument(self.cli_params, parse_argument)
         return params
 
     @property
@@ -630,9 +665,19 @@ def parse_graph_list(graph_list, instance_sets=None, _seen=None, overrides=None)
             time_limit_val = graph.pop("time_limit", None)
             job_time_limit_val = graph.pop("job_time_limit", None)
             if generator == "kagen":
+                if "expand_env" in graph:
+                    raise ValueError(
+                        "expand_env is only supported for generic inputs; "
+                        "use `root` for KaGen file graphs."
+                    )
                 new_inputs = [KaGenGraph(**graph_variant) for graph_variant in explode(graph)]
             elif generator in ("generic", "dummy"):
-                new_inputs = [GenericInstance(**graph_variant) for graph_variant in explode(graph)]
+                # pop before explode(): its list value names params, not a sweep
+                expand_env = graph.pop("expand_env", None)
+                new_inputs = [
+                    GenericInstance(**graph_variant, expand_env=expand_env)
+                    for graph_variant in explode(graph)
+                ]
             else:
                 raise ValueError(
                     f"'{generator}' is an unsupported input generator. Use ['kagen', 'generic'] instead."
